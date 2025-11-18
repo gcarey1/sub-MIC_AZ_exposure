@@ -1,0 +1,202 @@
+---
+title: "Coding_ranges"
+author: "Grace Carey"
+date: "2025-05-13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(GenomicRanges)
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+```
+
+First read in your annotated reference genome and the variants you are interested in. 
+Make sure your files are quality filtered and ready to go. 
+
+```{r, get files ready and quality filter}
+
+annotat <- read.csv("MG1655_flye_annotation.csv") #this file contains the annotation for the MG1655 reference strain assembled/annotated genome
+variants_df1 <- read.csv("combined_variations.csv")
+
+# head(annotat)
+
+variants_df <- dplyr::filter(variants_df1, Score >= 20)
+
+cds_data <- annotat[annotat$type == "CDS", ]
+names(cds_data)[names(cds_data) == "function."] <- "region_function"
+
+```
+
+Then use GenomicRanges to find where coding ranges (CDS) are found in the reference genome. 
+
+```{r, find CDS ranges}
+# Ensure start is always less than or equal to stop
+cds_data$start_fixed <- pmin(cds_data$start, cds_data$stop)
+cds_data$stop_fixed <- pmax(cds_data$start, cds_data$stop)
+
+
+library(GenomicRanges)
+
+cds_gr <- GRanges(
+  seqnames = cds_data$contig_id,
+  ranges = IRanges(start = cds_data$start_fixed, end = cds_data$stop_fixed),
+  strand = cds_data$strand
+)
+
+mcols(cds_gr)$feature_id <- cds_data$feature_id
+mcols(cds_gr)$region_function <- cds_data$region_function
+
+```
+
+Next find which variants of interest exist within a coding region (CDS). 
+
+```{r, find which variants are in cds}
+
+library(GenomicRanges)
+
+variants_gr <- GRanges(
+  seqnames = variants_df$Contig,
+  ranges = IRanges(start = variants_df$Pos, width = 1)
+)
+# unique(seqnames(variants_gr)) #use this to check what the contig name is for the variants data
+
+# Rename contig name in cds_gr to match the variant contig name
+seqlevels(cds_gr) <- "562.163959.con.0001"
+
+hits <- findOverlaps(variants_gr, cds_gr) #which variants are in a CDS?
+
+# Extract overlapping variants from variants_df
+variants_in_cds <- variants_df[queryHits(hits), ] #get the variants in CDS
+
+# Extract CDS metadata (e.g., feature_id, region_function)
+cds_hits <- cds_gr[subjectHits(hits)]
+cds_meta <- as.data.frame(mcols(cds_hits))
+
+# Combine both
+variants_in_cds$feature_id <- cds_meta$feature_id
+variants_in_cds$region_function <- cds_meta$region_function #now you have the desired variants
+
+
+# write.csv(variants_in_cds, "variants_in_CDS.csv", row.names = FALSE) #can write to csv if needed. 
+
+```
+
+And finally find which variants exist within 500 basepairs (upstream or downstream) of a coding region. 
+
+```{r, variants within 500bp of CDS}
+
+# Expand CDS ranges by 500bp on either side
+cds_gr_expanded <- resize(cds_gr, width = width(cds_gr) + 1000, fix = "center")
+
+# Find overlaps between variants and the expanded CDS ranges
+hits_expanded <- findOverlaps(variants_gr, cds_gr_expanded)
+
+# Extract overlapping variants
+variants_near_cds <- variants_df[queryHits(hits_expanded), ] # get the variants near CDS
+
+# Extract expanded CDS metadata
+cds_hits_expanded <- cds_gr_expanded[subjectHits(hits_expanded)]
+cds_meta_expanded <- as.data.frame(mcols(cds_hits_expanded))
+
+# Combine both
+variants_near_cds$feature_id <- cds_meta_expanded$feature_id
+variants_near_cds$region_function <- cds_meta_expanded$region_function # variants near CDS regions
+
+# Optionally, save to a CSV
+# write.csv(variants_near_cds, "variants_near_CDS.csv", row.names = FALSE)
+
+# Split Var column by comma and expand the rows accordingly
+variants_df_split <- variants_near_cds %>%
+  separate_rows(Var, sep = ",")  # This will separate Var into individual rows
+
+# Check the result
+print(variants_df_split)
+```
+
+Now that we have the variants within 500bp of a coding region, I will see which (non-synonymous) ones are unique to AZ cultures, which are unique to control cultures, and which are common to both. Unique will be defined as:
+Unique in position AND sequence. Since multiple variants can occur at a single position. 
+
+
+```{r}
+library(dplyr)
+library(writexl)
+
+# Read the key file
+Key <- read.csv("SNPs_key.csv")
+
+# Merge with variants data
+merged_variants <- merge(variants_df_split, Key, by = "Library_name", all.x = TRUE)
+
+# Create Pos_var to uniquely identify variants
+merged_variants <- merged_variants %>%
+  mutate(Pos_var = paste(Pos, Var, sep = "_"))
+
+# Separate into AZ and Control groups
+azithro <- merged_variants %>%
+  filter(Evolution_conditions == "Azithromycin")
+
+noazithro <- merged_variants %>%
+  filter(Evolution_conditions == "NoAzithromycin")
+
+# Identify unique and common Pos_vars
+az_posvars <- azithro$Pos_var
+noaz_posvars <- noazithro$Pos_var
+
+common_posvars <- intersect(az_posvars, noaz_posvars)
+az_unique_posvars <- setdiff(az_posvars, noaz_posvars)
+control_unique_posvars <- setdiff(noaz_posvars, az_posvars)
+
+# Filter each category to non-synonymous
+variants_unique_toAZ_filtered <- azithro %>%
+  filter(Pos_var %in% az_unique_posvars, Type != "Synon")
+
+variants_unique_toControl_filtered <- noazithro %>%
+  filter(Pos_var %in% control_unique_posvars, Type != "Synon")
+
+variants_common_filtered <- merged_variants %>%
+  filter(Pos_var %in% common_posvars, Type != "Synon")
+```
+
+
+
+```{r}
+
+# Function to create Excel sheet list
+make_sheet_list <- function(df) {
+  unique_gene_ids <- df %>%
+    select(Pos, Library_name, Gene_ID, Function, region_function, feature_id) %>%
+    distinct()
+
+  list(
+    All_Data = unique_gene_ids,
+    Unique_Gene_ID = unique(select(unique_gene_ids, Gene_ID)),
+    Unique_Function = unique(select(unique_gene_ids, Function)),
+    Unique_Region_Function = unique(select(unique_gene_ids, region_function)),
+    Unique_Feature_ID = unique(select(unique_gene_ids, feature_id))
+  )
+}
+# 
+# # Create and write Excel files
+# write_xlsx(make_sheet_list(variants_unique_toAZ_filtered), 
+#            path = "unique_gene_info_AZ.xlsx")
+# 
+# write_xlsx(make_sheet_list(variants_unique_toControl_filtered), 
+#            path = "unique_gene_info_Control.xlsx")
+# 
+# write_xlsx(make_sheet_list(variants_common_filtered), 
+#            path = "common_gene_info.xlsx")
+
+
+```
+
+```{r}
+# variantsredundant <- read.csv("All_variants.csv")
+# 
+# var_distinct <- distinct(variantsredundant)
+
+# write.csv(var_distinct, "unique_featureids_filtered_all.csv")
+
+```

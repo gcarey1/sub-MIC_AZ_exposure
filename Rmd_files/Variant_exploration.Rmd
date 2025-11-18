@@ -1,0 +1,2061 @@
+---
+title: "Coding_ranges"
+author: "Grace Carey"
+date: "2025-05-13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(GenomicRanges)
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(readxl)
+```
+
+# Important note
+
+This R script and the output files are specifically examining variants present in S07 (final sampling) samples. For a complete
+
+First read in your annotated reference genome and the variants you are interested in. 
+Make sure your files are quality filtered and ready to go. 
+
+
+```{r, get files ready and quality filter}
+
+annotat <- read.csv("MG1655_flye_annotation.csv") #this file contains the annotation for the MG1655 reference strain assembled/annotated genome
+variants_df1 <- read.csv("combined_variations.csv")
+
+# head(annotat)
+
+variants_df <- dplyr::filter(variants_df1, Score >= 20)
+
+cds_data <- annotat[annotat$type == "CDS", ]
+names(cds_data)[names(cds_data) == "function."] <- "region_function"
+
+```
+
+Then use GenomicRanges to find where coding ranges (CDS) are found in the reference genome. 
+
+```{r, find CDS ranges}
+# Ensure start is always less than or equal to stop
+cds_data$start_fixed <- pmin(cds_data$start, cds_data$stop)
+cds_data$stop_fixed <- pmax(cds_data$start, cds_data$stop)
+
+
+library(GenomicRanges)
+
+cds_gr <- GRanges(
+  seqnames = cds_data$contig_id,
+  ranges = IRanges(start = cds_data$start_fixed, end = cds_data$stop_fixed),
+  strand = cds_data$strand
+)
+
+mcols(cds_gr)$feature_id <- cds_data$feature_id
+mcols(cds_gr)$region_function <- cds_data$region_function
+
+```
+
+Next find which variants of interest exist within a coding region (CDS). 
+
+```{r, find which variants are in cds}
+
+library(GenomicRanges)
+
+variants_gr <- GRanges(
+  seqnames = variants_df$Contig,
+  ranges = IRanges(start = variants_df$Pos, width = 1)
+)
+# unique(seqnames(variants_gr)) #use this to check what the contig name is for the variants data
+
+# Rename contig name in cds_gr to match the variant contig name
+seqlevels(cds_gr) <- "562.163959.con.0001"
+
+hits <- findOverlaps(variants_gr, cds_gr) #which variants are in a CDS?
+
+# Extract overlapping variants from variants_df
+variants_in_cds <- variants_df[queryHits(hits), ] #get the variants in CDS
+
+# Extract CDS metadata (e.g., feature_id, region_function)
+cds_hits <- cds_gr[subjectHits(hits)]
+cds_meta <- as.data.frame(mcols(cds_hits))
+
+# Combine both
+variants_in_cds$feature_id <- cds_meta$feature_id
+variants_in_cds$region_function <- cds_meta$region_function #now you have the desired variants
+
+
+# write.csv(variants_in_cds, "variants_in_CDS.csv", row.names = FALSE) #can write to csv if needed. 
+
+```
+
+And finally find which variants exist within 500 basepairs (upstream or downstream) of a coding region. 
+
+```{r, variants within 500bp of CDS}
+
+# Expand CDS ranges by 500bp on either side
+cds_gr_expanded <- resize(cds_gr, width = width(cds_gr) + 1000, fix = "center")
+
+# Find overlaps between variants and the expanded CDS ranges
+hits_expanded <- findOverlaps(variants_gr, cds_gr_expanded)
+
+# Extract overlapping variants
+variants_near_cds <- variants_df[queryHits(hits_expanded), ] # get the variants near CDS
+
+# Extract expanded CDS metadata
+cds_hits_expanded <- cds_gr_expanded[subjectHits(hits_expanded)]
+cds_meta_expanded <- as.data.frame(mcols(cds_hits_expanded))
+
+# Combine both
+variants_near_cds$feature_id <- cds_meta_expanded$feature_id
+variants_near_cds$region_function <- cds_meta_expanded$region_function # variants near CDS regions
+
+# Optionally, save to a CSV
+# write.csv(variants_near_cds, "variants_near_CDS.csv", row.names = FALSE)
+
+# Split Var column by comma and expand the rows accordingly
+variants_df_split <- variants_near_cds %>%
+  separate_rows(Var, sep = ",")  # This will separate Var into individual rows
+
+# Check the result
+print(variants_df_split)
+```
+
+Now that we have the variants within 500bp of a coding region, I will see which (non-synonymous) ones are unique to AZ cultures, which are unique to control cultures, and which are common to both. Unique will be defined as:
+Unique in position AND sequence. Since multiple variants can occur at a single position. 
+
+
+```{r}
+library(dplyr)
+library(writexl)
+
+# Read the key file
+Key <- read.csv("SNPs_key.csv")
+
+# Merge with variants data
+merged_variants <- merge(variants_df_split, Key, by = "Library_name", all.x = TRUE)
+
+# Create Pos_var to uniquely identify variants
+merged_variants <- merged_variants %>%
+  mutate(Pos_var = paste(Pos, Var, sep = "_"))
+
+merged_variantsnonsyn <- filter(merged_variants, Type != "Synon")
+
+
+```
+
+```{r}
+
+#I am commenting this out so that it doesn't keep adding pipes to the feature_id column. This code does work, just uncomment when ready to use. 
+# blastresults <- read.csv("filteredblastinfo52125.csv") #these blast results are the result of blasting the unique variants against the nucleotide database to try and find more about what they actually are. After blasting they were quality filtered. These are the quality filtered blast results. 
+# 
+# merged_variantsnonsyn$feature_id <- paste0(merged_variantsnonsyn$feature_id, "|")
+# 
+# blastedvariants <- merge(blastresults, merged_variantsnonsyn,
+#                          by.x = "qseqid", by.y = "feature_id", all = TRUE)
+
+# write.csv(blastedvariants, "variantswithblastfiltered.csv")
+
+```
+
+
+```{r}
+
+# blastedvariants1 <- read.csv("variantswithblastfiltered.csv")
+# blastedvariants <- filter(blastedvariants1, Timepoint == "S07")
+blastedvariants <- read.csv("variantswithblastfiltered.csv")
+
+
+#in this dataframe, my own personal variant ids are in qseqid, and the feature IDs that BV BRC identified are in result.feature.id
+blastedvariants <- blastedvariants %>%
+  mutate(Gene.Symbol = ifelse(Gene.Symbol == "" | is.na(Gene.Symbol), result.feature.id, Gene.Symbol))
+
+length(unique(blastedvariants$feature_id))
+length(unique(blastedvariants$qseqid))
+sum(is.na(blastedvariants$subclass))
+blastedvariants$Gene.Symbol <- as.character(blastedvariants$Gene.Symbol)
+blastedvariants$Gene.Symbol[blastedvariants$Gene.Symbol == "fig|1133852.3.peg.3993"] <- "acrA" #checked the fig id in BVBRC and blasted nucleotides to check gene ID
+blastedvariants$Gene.Symbol[blastedvariants$Gene.Symbol == "fig|386585.9.peg.1523"] <- "ymdA" #checked the fig id in BVBRC and blasted nucleotides to check gene ID
+
+
+```
+
+
+
+```{r}
+custom_order <- c("AZ01_S01", "AZ01_S04", "AZ01_S07",
+                  "AZ02_S01", "AZ02_S04", "AZ02_S07",
+                  "AZ03_S01", "AZ03_S04", "AZ03_S07",
+                  "AZ04_S01", "AZ04_S04", "AZ04_S07",
+                  "AZ05_S01", "AZ05_S04", "AZ05_S07",
+                  "CN01_S01", "CN01_S04", "CN01_S07",
+                  "CN02_S01", "CN02_S04", "CN02_S07")
+
+
+
+blastedvariants$Sample <- factor(blastedvariants$Sample, levels = custom_order)
+ggplot(blastedvariants, aes(x = Sample, fill = Type)) +
+  geom_bar(position = "stack") +
+  scale_fill_brewer(palette = "Dark2") +
+  labs(
+    title = "Count of Variant Types per Sample",
+    x = "Sample",
+    y = "Count",
+    fill = "Variation Type"
+  ) +
+  theme_minimal() +
+  theme(panel.grid.major = element_blank()) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 9)) 
+    # geom_vline(xintercept = c(0.5,3.5,6.5, 9.5, 12.5, 15.5, 18.5, 21.5), color = "black", linetype = "solid")
+
+# ggsave("variant_counts_bars.png", width = 8, height = 6, dpi = 300)
+
+
+```
+
+
+
+
+
+```{r}
+
+
+# Define colors for subclasses - you can customize these hex codes
+subclass_colors <- c(
+  "Capsule and Slime layer" = "#1f77b4",
+  "Multidrug efflux systems" = "#ff7f0e",
+  "Branched-chain amino acids" = "#2ca02c",
+  "Fermentation" = "#d62728",
+  "Transcription" = "#9467bd",
+  "Ribosome biogenesis" = "#8c564b",
+  "RNA processing and modification" = "#e377c2",
+  "Protein folding" = "#7f7f7f",
+  "Aromatic amino acids and derivatives" = "#bcbd22",
+  "No_subclass" = "gray80"  # Add this line for 'None'
+)
+```
+
+```{r}
+blastedvariants <- filter(blastedvariants, Start != "NA")
+
+blastedvariants <- blastedvariants %>%
+  mutate(
+    Gene_with_sstart = paste0(Gene.Symbol, " ", format(Start, scientific = TRUE) )
+  ) %>%
+  arrange(Start) %>%
+  mutate(Gene_with_sstart = factor(Gene_with_sstart, levels = unique(Gene_with_sstart)))
+
+
+
+```
+
+```{r}
+library(dplyr)
+
+# Create combined identifier
+blastedvariants2 <- blastedvariants %>%
+  dplyr::mutate(
+    Gene.Symbol = as.character(Gene.Symbol),
+    Type = as.character(Type),
+    Gene.Symbol.Type = paste(Gene.Symbol, Type, sep = "_")
+  )
+
+
+# Remove rows with missing treatment info, if any
+blastedvariants_clean <- blastedvariants2 %>%
+  filter(!is.na(Evolution_conditions))
+
+# Map gene to treatment combinations
+gene_treatment_map <- blastedvariants_clean %>%
+  distinct(Gene.Symbol.Type, Evolution_conditions)
+
+# Summarize treatments per gene
+gene_type_counts <- gene_treatment_map %>%
+  group_by(Gene.Symbol.Type) %>%
+  summarise(
+    conditions = list(sort(unique(Evolution_conditions))),
+    .groups = "drop"
+  )
+
+# Classify based on condition combinations
+gene_type_counts <- gene_type_counts %>%
+  rowwise() %>%
+  mutate(
+    Uniqueness = case_when(
+      setequal(conditions, "Azithromycin") & length(conditions) == 1 ~ "Unique to azithromycin",
+      setequal(conditions, "NoAzithromycin") & length(conditions) == 1 ~ "Unique to control",
+      setequal(conditions, c("Azithromycin", "NoAzithromycin")) ~ "Present in both",
+      TRUE ~ NA_character_
+    )
+  ) %>%
+  ungroup()
+
+
+# Merge Uniqueness back into full data
+blastedvariants2 <- blastedvariants2 %>%
+  left_join(
+    gene_type_counts %>% select(Gene.Symbol.Type, Uniqueness),
+    by = "Gene.Symbol.Type"
+  )
+
+blastedvariants2 <- blastedvariants2 %>%
+  mutate(Gene.Symbol = recode(Gene.Symbol,
+    "fig|1133852.3.peg.1097" = "Unknown 1",
+    "fig|386585.9.peg.3878" = "Unknown 2"
+  ))
+
+```
+
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# Desired sample order
+desired_samples <- c(
+  "CN02_S07", "CN02_S04", "CN02_S01", "CN01_S07", "CN01_S04", "CN01_S01",
+  "AZ05_S07", "AZ05_S04", "AZ05_S01", "AZ04_S07", "AZ04_S04", "AZ04_S01",
+  "AZ03_S07", "AZ03_S04", "AZ03_S01", "AZ02_S07", "AZ02_S04", "AZ02_S01", "AZ01_S07","AZ01_S04","AZ01_S01")
+
+# Fill in missing Gene.Symbol–Sample combinations
+blastedvariants2 <- blastedvariants2 %>%
+  complete(Gene.Symbol, Sample = desired_samples)
+
+# Reapply factor levels explicitly after complete()
+blastedvariants2$Sample <- factor(blastedvariants2$Sample, levels = desired_samples)
+
+
+variantgenetypeall <- ggplot(blastedvariants2, aes(x = Gene.Symbol, y = Sample)) +
+  geom_tile(aes(fill = Type), color = "gray50", size = 0.5, na.rm = FALSE) +
+scale_fill_manual(
+  values = c(
+    "Insertion" = "#71a80d",
+    "Nonsyn" = "#4caaea",
+    "Deletion" = "#d75b43"
+  ),
+  na.value = "white"  # <--- this sets the color for NA fills
+) +
+  labs(
+    title = "Genes with variants",
+    x = "Gene",
+    y = "Sample",
+    fill = "Type"
+  ) +
+  theme_minimal() +
+  theme(
+    panel.background = element_rect(fill = "white", color = NA),
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.grid.major = element_line(color = "gray80"),
+    panel.grid.minor = element_line(color = "gray90"),
+    axis.text.x = element_text(angle = 90, hjust = 1,vjust = 0.5, size = 7),
+    axis.text.y = element_text(size = 10)
+  )
+
+
+
+variantgenetypeall
+
+
+# ggsave(
+#   filename = "variantgenetypeall.png",     # or "micwithline.pdf", "micwithline.svg"
+#   plot = variantgenetypeall,
+#   width = 8,       # width in inches
+#   height = 6,      # height in inches
+#   dpi = 300        # resolution
+# )
+
+
+```
+
+```{r}
+# library(dplyr)
+# library(tidyr)
+# library(ggplot2)
+# 
+# # Desired sample order
+# # desired_samples <- c(
+# #   "CN02_S07", "CN01_S07",
+# #   "AZ05_S07", "AZ04_S07",
+# #   "AZ03_S07", "AZ02_S07", "AZ01_S07"
+# # )
+# 
+# # # Fill in missing Gene.Symbol–Sample combinations
+# # blastedvariants2 <- blastedvariants2 %>%
+# #   complete(Gene.Symbol, Sample = desired_samples)
+# blastedvariantshatch <- blastedvariants2
+# # Reapply factor levels explicitly after complete()
+# blastedvariantshatch$Sample <- factor(blastedvariantshatch$Sample, levels = desired_samples)
+# 
+# # Step 1: Create a gene order based on the Start position
+# gene_order <- blastedvariantshatch %>%
+#   group_by(Gene.Symbol) %>%
+#   summarise(Start = min(Start, na.rm = TRUE), .groups = "drop") %>%
+#   arrange(Start) %>%
+#   pull(Gene.Symbol)
+# 
+# # Step 2: Apply that order to the Gene.Symbol factor
+# blastedvariantshatch <- blastedvariantshatch %>%
+#   mutate(Gene.Symbol = factor(Gene.Symbol, levels = gene_order))
+# 
+# library(ggpattern) 
+# 
+# variantgenetypeallhatch <- ggplot(blastedvariantshatch, aes(x = factor(Gene.Symbol), y = Sample)) +
+#   geom_tile_pattern(
+#     aes(
+#       fill = Type,
+#       pattern = ifelse(Uniqueness == "Present in both", "crosshatch", "none")
+#     ),
+#     pattern_fill = "black",
+#     pattern_angle = 45,
+#     pattern_density = 0.2,
+#     pattern_spacing = 0.02,
+#     color = "gray50",
+#     size = 0.5
+#   ) +
+#   scale_fill_manual(
+#     values = c(
+#       "Insertion" = "#71a80d",
+#       "Nonsyn" = "#4caaea",
+#       "Deletion" = "#d75b43"
+#     ),
+#     na.value = "white"
+#   ) +
+#   scale_pattern_manual(values = c("none" = NA, "crosshatch" = "crosshatch")) +
+#   labs(
+#     title = "Genes with variants unique to AZ or control",
+#     x = "Gene",
+#     y = "Sample",
+#     fill = "Type",
+#     pattern = "Uniqueness"
+#   ) +
+#   theme_minimal() +
+#   guides(pattern="none") +
+#   theme(
+#     panel.background = element_rect(fill = "white", color = NA),
+#     plot.background = element_rect(fill = "white", color = NA),
+#     panel.grid.major = element_line(color = "gray80"),
+#     panel.grid.minor = element_line(color = "gray90"),
+#     axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 7),
+#     axis.text.y = element_text(size = 8))
+# 
+# variantgenetypeallhatch
+# 
+# 
+# # ggsave(
+# #   filename = "variantgenetypeallhatch.png",     # or "micwithline.pdf", "micwithline.svg"
+# #   plot = variantgenetypeallhatch,
+# #   width = 9,       # width in inches
+# #   height = 6,      # height in inches
+# #   dpi = 300        # resolution
+# # )
+
+
+```
+```{r, fig.height = 20, fig.width=10}
+# 
+# library(ggplot2)
+# library(dplyr)
+# library(ggpattern)
+# library(ggh4x)
+# 
+# # Factor level setup (Sample and Gene.Symbol)
+# blastedvariantshatch <- blastedvariants2
+# blastedvariantshatch <- filter(blastedvariantshatch, Timepoint != "NA")
+# 
+# desired_samples <- c(
+#   "AZ01_S01", "AZ01_S04", "AZ01_S07",
+#   "AZ02_S01", "AZ02_S04", "AZ02_S07",
+#   "AZ03_S01", "AZ03_S04", "AZ03_S07",
+#   "AZ04_S01", "AZ04_S04", "AZ04_S07",
+#   "AZ05_S01", "AZ05_S04", "AZ05_S07",
+#   "CN01_S01", "CN01_S04", "CN01_S07",
+#   "CN02_S01", "CN02_S04", "CN02_S07"
+# )
+# 
+# blastedvariantshatch <- blastedvariantshatch %>%
+#   mutate(
+#     Sample = factor(Sample, levels = desired_samples),
+#     Culture = factor(Culture),
+#     Timepoint = factor(Timepoint)
+#   )
+# 
+# gene_order <- blastedvariantshatch %>%
+#   group_by(Gene.Symbol) %>%
+#   summarise(Start = min(Start, na.rm = TRUE), .groups = "drop") %>%
+#   arrange(Start) %>%
+#   pull(Gene.Symbol)
+# 
+# blastedvariantshatch <- blastedvariantshatch %>%
+#   mutate(Gene.Symbol = factor(Gene.Symbol, levels = gene_order))
+# 
+# variantgenetypeallhatch <- ggplot(blastedvariantshatch, aes(x = Gene.Symbol, y = Timepoint)) +
+#   geom_tile_pattern(
+#     aes(
+#       fill = Type,
+#       pattern = ifelse(Uniqueness == "Present in both", "crosshatch", "none")
+#     ),
+#     pattern_fill = "black",
+#     pattern_angle = 45,
+#     pattern_density = 0.2,
+#     pattern_spacing = 0.02,
+#     color = "gray50",
+#     size = 0.5
+#   ) +
+#   facet_grid(Culture ~ ., 
+#              labeller = label_value,
+#              scales = "fixed",
+#              space = "fixed") +
+#   scale_fill_manual(
+#     values = c(
+#       "Insertion" = "#71a80d",
+#       "Nonsyn" = "#4caaea",
+#       "Deletion" = "#d75b43"
+#     ),
+#     na.value = "white"
+#   ) +
+#   scale_pattern_manual(values = c("none" = NA, "crosshatch" = "crosshatch")) +
+#   guides(pattern = "none") +
+#   labs(
+#     title = "Genes with variants unique to AZ or control",
+#     x = "Gene",
+#     y = "Timepoint",
+#     fill = "Type",
+#     pattern = "Uniqueness"
+#   ) +
+#   theme_minimal() +
+#   theme(
+#     panel.background = element_rect(fill = "white", color = NA),
+#     plot.background = element_rect(fill = "white", color = NA),
+#     panel.grid.major = element_line(color = "gray80"),
+#     panel.grid.minor = element_line(color = "gray90"),
+#     axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 7),
+#     axis.text.y = element_text(angle = 0, size = 8),  # horizontal timepoint labels
+#     strip.text.y = element_text(size = 10, angle = 0),
+#     strip.background = element_rect(fill = "gray90", color = "lightgray"),
+#     strip.placement = "outside",
+#     panel.spacing = unit(0.5, "lines")
+#   )
+# 
+# variantgenetypeallhatch
+```
+
+```{r, fig.height=20, fig.width=10}
+
+
+# ggplot(blastedvariantshatch, aes(x = Gene.Symbol, y = Timepoint)) +
+#   geom_tile_pattern(
+#     aes(
+#       fill = Type,
+#       pattern = ifelse(Uniqueness == "Present in both", "crosshatch", "none")
+#     ),
+#     pattern_fill = "black",
+#     pattern_angle = 45,
+#     pattern_density = 0.2,
+#     pattern_spacing = 0.02,
+#     color = "gray50",
+#     size = 0.5
+#   ) +
+#   facet_grid(Culture ~ ., switch = "y", labeller = label_value) +
+#   scale_y_discrete(position = "right") +
+#   scale_fill_manual(values = c("Insertion" = "#71a80d", "Nonsyn" = "#4caaea", "Deletion" = "#d75b43")) +
+#   scale_pattern_manual(values = c("none" = NA, "crosshatch" = "crosshatch")) +
+#   guides(pattern = "none") +
+#   labs(
+#     x = "Gene",
+#     y = "Timepoint",
+#     fill = "Type",
+#     pattern = "Uniqueness"
+#   ) +
+#   theme_minimal() +
+#   theme(
+#     panel.background = element_rect(fill = "white", color = NA),
+#     plot.background = element_rect(fill = "white", color = NA),
+#     panel.grid.major = element_line(color = "gray80"),
+#     panel.grid.minor = element_line(color = "gray90"),
+#     axis.text.x = element_text(angle = 90, size = 7, vjust = 0.5),
+#     axis.title.y.right = element_text(angle = 270, vjust = 0.5),
+#     axis.title.y = element_blank(),
+#     axis.text.y.right = element_text(size = 8),
+#     axis.text.y = element_blank(),
+#     axis.ticks.y = element_blank(),
+# 
+#     strip.placement = "outside",
+#     strip.text.y.right = element_text(angle = 0, size = 10),
+#     panel.spacing = unit(0.5, "lines")
+#   )
+
+
+```
+
+```{r, fig.width=10, fig.height=20}
+ggplot(blastedvariantshatch, aes(x = Gene.Symbol, y = Sample, fill = Type)) +  # y = Sample needed here
+  geom_tile_pattern(
+    aes(
+      pattern = ifelse(Uniqueness == "Present in both", "crosshatch", "none")
+    ),
+    pattern_fill = "black",
+    pattern_angle = 45,
+    pattern_density = 0.2,
+    pattern_spacing = 0.02,
+    color = "gray50",
+    size = 0.5,
+    height = 0.9
+  ) +
+  facet_nested(Culture + Timepoint ~ .,
+               labeller = label_value,
+               scales = "fixed",
+               space = "fixed") +
+  scale_fill_manual(
+    values = c(
+      "Insertion" = "#71a80d",
+      "Nonsyn" = "#4caaea",
+      "Deletion" = "#d75b43"
+    ),
+    na.value = "white"
+  ) +
+  scale_pattern_manual(values = c("none" = NA, "crosshatch" = "crosshatch")) +
+  guides(pattern = "none") +
+  labs(
+    title = "Genes with variants unique to AZ or control",
+    x = "Gene",
+    y = NULL,  # hide y-axis label
+    fill = "Type",
+    pattern = "Uniqueness"
+  ) +
+  theme_minimal() +
+  theme(
+    panel.background = element_rect(fill = "white", color = NA),
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.grid.major = element_line(color = "gray80"),
+    panel.grid.minor = element_line(color = "gray90"),
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 7),
+    axis.text.y = element_blank(),    # hide y axis text
+    axis.ticks.y = element_blank(),   # hide y axis ticks
+    strip.background = element_rect(fill = "gray90", color = "lightgray"),
+    strip.placement = "outside",
+    panel.spacing = unit(0.5, "lines")
+  )
+
+```
+
+```{r}
+# Desired sample order
+desired_samples <- c(
+  "CN02_S07", "CN01_S07",
+  "AZ05_S07", "AZ04_S07",
+  "AZ03_S07", "AZ02_S07", "AZ01_S07"
+)
+
+blastedvariantsfiltered <- filter(blastedvariants2, Timepoint == "S07")
+
+# Fill in missing Gene.Symbol–Sample combinations
+blastedvariantsfiltered <- filter(blastedvariantsfiltered, Uniqueness != "Present in both")
+
+blastedvariantsfiltered <- blastedvariantsfiltered %>%
+  complete(Gene.Symbol, Sample = desired_samples)
+blastedvariantsfiltered <- filter(blastedvariants2, Timepoint == "S07")
+# Reapply factor levels explicitly after complete()
+blastedvariantsfiltered$Sample <- factor(blastedvariantsfiltered$Sample, levels = desired_samples)
+library(forcats)
+
+# blastedvariantsfiltered <- blastedvariantsfiltered %>%
+#   mutate(Gene.Symbol = fct_infreq(Gene.Symbol))
+# Step 1: Create a gene order based on the Start position
+gene_order <- blastedvariantsfiltered %>%
+  group_by(Gene.Symbol) %>%
+  summarise(Start = min(Start, na.rm = TRUE), .groups = "drop") %>%
+  arrange(Start) %>%
+  pull(Gene.Symbol)
+
+# Step 2: Apply that order to the Gene.Symbol factor
+blastedvariantsfiltered <- blastedvariantsfiltered %>%
+  mutate(Gene.Symbol = factor(Gene.Symbol, levels = gene_order))
+
+
+variantgenetypeall2 <- ggplot(blastedvariantsfiltered, aes(x = factor(Gene.Symbol), y = Sample)) +
+  geom_tile(aes(fill = Type), color = "gray50", size = 0.5) +
+  scale_fill_manual(
+    values = c(
+      "Insertion" = "#71a80d",
+      "Nonsyn" = "#4caaea",
+      "Deletion" = "#d75b43"
+    ),
+    na.value = "white"
+  ) +
+  labs(
+    title = "Genes with variants unique to AZ or control",
+    x = "Gene",
+    y = "Sample",
+    fill = "Type"
+  ) +
+  theme_minimal() +
+  theme(
+    panel.background = element_rect(fill = "white", color = NA),
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.grid.major = element_line(color = "gray80"),
+    panel.grid.minor = element_line(color = "gray90"),
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust= 0.5, size = 7),
+    axis.text.y = element_text(size = 10)
+  )
+
+
+variantgenetypeall2
+
+
+# ggsave(
+#   filename = "variantgenetypeall2.png",     # or "micwithline.pdf", "micwithline.svg"
+#   plot = variantgenetypeall2,
+#   width = 8,       # width in inches
+#   height = 6,      # height in inches
+#   dpi = 300        # resolution
+# )
+
+
+```
+
+```{r, fig.height= 15, fig.width= 10}
+
+library(ggplot2)
+library(dplyr)
+# Remove "NA" as character (not actual NA)
+blastedvariants2na <- filter(blastedvariants2, Timepoint != "NA")
+desired_samples <- c(
+"AZ01_S01", "AZ01_S04", "AZ01_S07",
+"AZ02_S01", "AZ02_S04", "AZ02_S07",
+"AZ03_S01", "AZ03_S04", "AZ03_S07",
+"AZ04_S01", "AZ04_S04", "AZ04_S07",
+"AZ05_S01", "AZ05_S04", "AZ05_S07",
+"CN01_S01", "CN01_S04", "CN01_S07",
+"CN02_S01", "CN02_S04", "CN02_S07")
+
+blastedvariants2na <- blastedvariants2na %>%
+  mutate(Sample = factor(Sample, levels = desired_samples))
+
+# Step 1: Create a gene order based on the Start position
+gene_order <- blastedvariants2na %>%
+  group_by(Gene.Symbol) %>%
+  summarise(Start = min(Start, na.rm = TRUE), .groups = "drop") %>%
+  arrange(Start) %>%
+  pull(Gene.Symbol)
+
+# Step 2: Apply that order to the Gene.Symbol factor
+blastedvariants2na <- blastedvariants2na %>%
+  mutate(Gene.Symbol = factor(Gene.Symbol, levels = gene_order))
+
+# Plot
+ggplot(blastedvariants2na, aes(x = Gene.Symbol, y = Var_frac, fill = Type)) +
+  geom_col(position = "dodge") +
+  facet_grid(Sample ~ ., scales = "fixed", space = "fixed") +
+  labs(
+    x = "Gene",
+    y = "Variant Fraction",
+    fill = "Variant Type",
+    title = "Variant Fraction by Gene, Type, Culture, and Timepoint"
+  ) +
+  theme_minimal() +
+  geom_hline(yintercept = c(1,0), linewidth = 0.25) +
+  theme(
+  axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 8),
+  strip.text.y = element_text(angle = 0, size = 10)  # horizontal text for row strips
+)
+
+
+```
+
+```{r, fig.height= 15, fig.width= 15}
+
+library(ggplot2)
+library(ggh4x)
+library(dplyr)
+
+# Filter and prepare data
+blastedvariants2na <- blastedvariants2 %>%
+  filter(Timepoint != "NA")
+
+desired_samples <- c(
+  "AZ01_S01", "AZ01_S04", "AZ01_S07",
+  "AZ02_S01", "AZ02_S04", "AZ02_S07",
+  "AZ03_S01", "AZ03_S04", "AZ03_S07",
+  "AZ04_S01", "AZ04_S04", "AZ04_S07",
+  "AZ05_S01", "AZ05_S04", "AZ05_S07",
+  "CN01_S01", "CN01_S04", "CN01_S07",
+  "CN02_S01", "CN02_S04", "CN02_S07"
+)
+
+# Order factor levels
+gene_order <- blastedvariants2na %>%
+  group_by(Gene.Symbol) %>%
+  summarise(Start = min(Start, na.rm = TRUE), .groups = "drop") %>%
+  arrange(Start) %>%
+  pull(Gene.Symbol)
+
+blastedvariants2na <- blastedvariants2na %>%
+  mutate(
+    Sample = factor(Sample, levels = desired_samples),
+    Gene.Symbol = factor(Gene.Symbol, levels = gene_order),
+    Culture = factor(Culture),
+    Timepoint = factor(Timepoint)
+  )
+
+# Plot with nested facets: rows = Sample, columns = Culture + Timepoint
+varfracbars <- ggplot(blastedvariants2na, aes(x = Gene.Symbol, y = Var_frac, fill = Type)) +
+  geom_col(position = "dodge") +
+  facet_nested(
+    Culture + Timepoint ~ . ,
+    labeller = label_value,
+    scales = "fixed",
+    space = "fixed"
+  ) +
+  labs(
+    x = "Gene",
+    y = "Variant Fraction",
+    fill = "Variant Type",
+    title = "Variant Fraction by Gene, Type, Culture, Timepoint and Sample"
+  ) +
+  theme_minimal() +
+  geom_hline(yintercept = c(0, 1), linewidth = 0.25) +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 8),
+    strip.text.y = element_text(angle = 0, size = 10),
+    panel.spacing = unit(0.5, "lines"),
+    strip.background = element_rect(fill = "gray90", color = "lightgray"),
+    strip.placement = "outside"
+  )
+
+# ggsave(
+#   filename = "var_frac_large.png",     # or "micwithline.pdf", "micwithline.svg"
+#   plot = varfracbars,
+#   width = 15,       # width in inches
+#   height = 15,      # height in inches
+#   dpi = 300        # resolution
+# )
+```
+
+```{r}
+
+library(ggplot2)
+library(ggh4x)
+library(dplyr)
+
+# Filter and prepare data
+blastedvariants2na <- blastedvariants2 %>%
+  filter(Timepoint != "NA")
+
+# Desired sample order
+desired_samples <- c(
+  "AZ01_S01", "AZ01_S04", "AZ01_S07",
+  "AZ02_S01", "AZ02_S04", "AZ02_S07",
+  "AZ03_S01", "AZ03_S04", "AZ03_S07",
+  "AZ04_S01", "AZ04_S04", "AZ04_S07",
+  "AZ05_S01", "AZ05_S04", "AZ05_S07",
+  "CN01_S01", "CN01_S04", "CN01_S07",
+  "CN02_S01", "CN02_S04", "CN02_S07"
+)
+
+# Factor ordering
+gene_order <- blastedvariants2na %>%
+  group_by(Gene.Symbol) %>%
+  summarise(Start = min(Start, na.rm = TRUE), .groups = "drop") %>%
+  arrange(Start) %>%
+  pull(Gene.Symbol)
+
+blastedvariants2na <- blastedvariants2na %>%
+  mutate(
+    Sample = factor(Sample, levels = desired_samples),
+    Gene.Symbol = factor(Gene.Symbol, levels = gene_order),
+    Culture = factor(Culture),
+    Timepoint = factor(Timepoint)
+  )
+
+# List of unique Cultures
+cultures <- levels(blastedvariants2na$Culture)
+
+# Loop over cultures and generate/save plots
+for (cult in cultures) {
+  df_cult <- blastedvariants2na %>% filter(Culture == cult)
+
+  # Ensure all Gene.Symbol levels are preserved
+  df_cult <- df_cult %>%
+    mutate(Gene.Symbol = factor(Gene.Symbol, levels = gene_order))
+
+  p <- ggplot(df_cult, aes(x = Gene.Symbol, y = Var_frac, fill = Type)) +
+    geom_col(position = "dodge") +
+    facet_nested(Timepoint ~ ., labeller = label_value, scales = "fixed", space = "fixed") +
+    labs(
+      title = paste("Variant Fraction -", cult),
+      x = "Gene",
+      y = "Variant Fraction",
+      fill = "Variant Type"
+    ) +
+    geom_hline(yintercept = c(0, 1), linewidth = 0.25) +
+    theme_minimal() +
+    theme(
+      axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 7),
+      strip.text.y = element_text(angle = 0, size = 10),
+      panel.spacing = unit(0.5, "lines"),
+      strip.background = element_rect(fill = "gray90", color = "lightgray"),
+      strip.placement = "outside"
+    )
+
+  print(p)
+
+  # Optional: save to file
+  # ggsave(
+  #   filename = paste0("variant_frac_", cult, ".png"),
+  #   plot = p,
+  #   width = 12,
+  #   height = 10,
+  #   dpi = 300
+  # )
+}
+
+
+
+```
+```{r, fig.width = 10}
+
+library(ggplot2)
+library(ggh4x)
+library(dplyr)
+library(tidyr)
+
+# Filter and prepare data
+blastedvariants2na <- blastedvariants2 %>%
+  filter(Timepoint != "NA")
+
+# Desired sample order
+desired_samples <- c(
+  "AZ01_S01", "AZ01_S04", "AZ01_S07",
+  "AZ02_S01", "AZ02_S04", "AZ02_S07",
+  "AZ03_S01", "AZ03_S04", "AZ03_S07",
+  "AZ04_S01", "AZ04_S04", "AZ04_S07",
+  "AZ05_S01", "AZ05_S04", "AZ05_S07",
+  "CN01_S01", "CN01_S04", "CN01_S07",
+  "CN02_S01", "CN02_S04", "CN02_S07"
+)
+
+# Order genes by Start
+gene_order <- blastedvariants2na %>%
+  group_by(Gene.Symbol) %>%
+  summarise(Start = min(Start, na.rm = TRUE), .groups = "drop") %>%
+  arrange(Start) %>%
+  pull(Gene.Symbol)
+
+# Apply factor levels globally
+blastedvariants2na <- blastedvariants2na %>%
+  mutate(
+    Sample = factor(Sample, levels = desired_samples),
+    Gene.Symbol = factor(Gene.Symbol, levels = gene_order),
+    Culture = factor(Culture),
+    Timepoint = factor(Timepoint)
+  )
+
+# List of unique cultures
+cultures <- levels(blastedvariants2na$Culture)
+
+# Loop over cultures and plot
+for (cult in cultures) {
+  df_cult <- blastedvariants2na %>%
+    filter(Culture == cult) %>%
+    mutate(
+      Gene.Symbol = factor(Gene.Symbol, levels = gene_order),
+      Timepoint = factor(Timepoint, levels = levels(blastedvariants2na$Timepoint))
+    ) %>%
+    complete(Gene.Symbol, Timepoint, fill = list(Var_frac = 0))
+
+  p <- ggplot(df_cult, aes(x = Gene.Symbol, y = Var_frac, fill = Type)) +
+    geom_col(position = "dodge") +
+    facet_nested(Timepoint ~ ., labeller = label_value, scales = "fixed", space = "fixed") +
+    labs(
+      title = paste("Variant Fraction -", cult),
+      x = "Gene",
+      y = "Variant Fraction",
+      fill = "Variant Type"
+    ) +
+    geom_hline(yintercept = c(0, 1), linewidth = 0.25) +
+    theme_minimal() +
+    theme(
+      axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 7),
+            axis.text.y = element_text(size = 15),
+      strip.text.y = element_text(angle = 0, size = 15),
+      panel.spacing = unit(0.5, "lines"),
+      strip.background = element_rect(fill = "gray90", color = "lightgray"),
+      strip.placement = "outside"
+    )
+
+  # Save the plot
+  ggsave(
+    filename = paste0("variant_frac_", cult, ".png"),
+    plot = p,
+    width = 12,
+    height = 10,
+    dpi = 300
+  )
+}
+
+
+
+```
+
+```{r}
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# Desired sample order
+desired_samples <- c(
+  "CN02_S07", "CN02_S04", "CN02_S01", "CN01_S07", "CN01_S04", "CN01_S01",
+  "AZ05_S07", "AZ05_S04", "AZ05_S01", "AZ04_S07", "AZ04_S04", "AZ04_S01",
+  "AZ03_S07", "AZ03_S04", "AZ03_S01", "AZ02_S07", "AZ02_S04", "AZ02_S01", "AZ01_S07","AZ01_S04","AZ01_S01")
+
+# Fill in missing Gene.Symbol–Sample combinations
+blastedvariants2 <- blastedvariants2 %>%
+  complete(Gene.Symbol, Sample = desired_samples)
+
+# Reapply factor levels explicitly after complete()
+blastedvariants2$Sample <- factor(blastedvariants2$Sample, levels = desired_samples)
+
+
+variantsorted <- ggplot(blastedvariants2, aes(x = Gene.Symbol, y = Sample)) +
+  geom_tile(aes(fill = Type), color = "gray50", size = 0.5, na.rm = FALSE) +
+scale_fill_manual(
+  values = c(
+    "Insertion" = "#71a80d",
+    "Nonsyn" = "#4caaea",
+    "Deletion" = "#d75b43"
+  ),
+  na.value = "white"  # <--- this sets the color for NA fills
+) +
+  labs(
+    title = "Genes with variants",
+    x = "Gene",
+    y = "Sample",
+    fill = "Type"
+  ) +
+  theme_minimal() +
+  theme(
+    panel.background = element_rect(fill = "white", color = NA),
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.grid.major = element_line(color = "gray80"),
+    panel.grid.minor = element_line(color = "gray90"),
+    axis.text.x = element_text(angle = 90, hjust = 1,vjust = 0.5, size = 7),
+    axis.text.y = element_text(size = 10)
+  )
+
+
+
+variantsorted
+
+
+# ggsave(
+#   filename = "variantgenetypeall.png",     # or "micwithline.pdf", "micwithline.svg"
+#   plot = variantgenetypeall,
+#   width = 8,       # width in inches
+#   height = 6,      # height in inches
+#   dpi = 300        # resolution
+# )
+
+
+```
+
+
+
+
+
+```{r}
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# --- Genes of interest ---
+all_genes <- unique(c(
+  "ycgV", "csgA", "csgC", "fimC", "fimF", "fimI",
+  "ybjK", "wcaC", "wcaD", "fliS", "fliT", "ampH",
+  "sbmA", "acrR", "kefA", "yifK", "yjhB", "fadL",
+  "frmA", "frmR", "yaiO", "stfP", "tfaP", "tfaE",
+  "stfE", "pinE", "yfcA", "mepA", "fadL", "yfdF",
+  "yifK", "aslB", "rpoB", "rpoC", "yjjZ", "rsmC",
+  "yjtD", "thrA"
+))
+
+# --- Desired sample order ---
+desired_samples <- c(
+  "CN02_S07", "CN02_S04", "CN02_S01", "CN01_S07", "CN01_S04", "CN01_S01",
+  "AZ05_S07", "AZ05_S04", "AZ05_S01", "AZ04_S07", "AZ04_S04", "AZ04_S01",
+  "AZ03_S07", "AZ03_S04", "AZ03_S01", "AZ02_S07", "AZ02_S04", "AZ02_S01",
+  "AZ01_S07", "AZ01_S04", "AZ01_S01"
+)
+
+# --- Filter, simplify, and mark presence ---
+blastedvariants_simple <- blastedvariants2 %>%
+  select(Gene.Symbol, Sample, qseqid) %>%
+  filter(Gene.Symbol %in% all_genes) %>%
+  distinct() %>%
+  # Create Evolution_conditions based on Sample name
+  mutate(
+    Evolution_conditions = case_when(
+      grepl("^AZ", Sample) ~ "Azithromycin",
+      grepl("^CN", Sample) ~ "NoAzithromycin",
+      TRUE ~ NA_character_
+    ),
+    Present = !is.na(qseqid)  # TRUE if gene is present
+  ) %>%
+  # Fill in missing Gene-Sample combinations
+  complete(
+    Gene.Symbol = all_genes,
+    Sample = desired_samples,
+    fill = list(Evolution_conditions = NA, Present = FALSE)
+  ) %>%
+  mutate(
+    Sample = factor(Sample, levels = desired_samples),
+    Gene.Symbol = factor(Gene.Symbol, levels = all_genes)
+  )
+
+# --- Plot ---
+ggplot(blastedvariants_simple, aes(x = Gene.Symbol, y = Sample)) +
+  geom_tile(aes(fill = ifelse(Present, Evolution_conditions, NA)), color = "gray50", size = 0.5) +
+  scale_fill_manual(
+    values = c("Azithromycin" = "#FFC107", "NoAzithromycin" = "#1E88E5"),
+    na.value = "white"
+  ) +
+  labs(
+    title = "Genes with AZ or CN variants",
+    x = "Gene",
+    y = "Sample",
+    fill = "Evolution condition"
+  ) +
+  theme_minimal() +
+  theme(
+    panel.background = element_rect(fill = "white", color = NA),
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.grid.major = element_line(color = "gray80"),
+    panel.grid.minor = element_line(color = "gray90"),
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 7),
+    axis.text.y = element_text(size = 10)
+  )
+
+```
+```{r}
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# --- Genes of interest by category ---
+biofilm_genes <- c("ycgV", "csgA", "csgC", "fimC", "fimF", "fimI",
+                   "ybjK", "wcaC", "wcaD", "fliS", "fliT", "ampH")
+efflux_genes <- c("sbmA", "acrR", "kefA", "yifK", "yjhB", "fadL")
+persistent_genes <- c("frmA", "frmR", "yaiO", "stfP", "tfaP", "tfaE",
+                      "stfE", "pinE", "yfcA", "mepA", "fadL", "yfdF",
+                      "yifK", "aslB", "rpoB", "rpoC", "yjjZ", "rsmC",
+                      "yjtD", "thrA")
+
+all_genes <- unique(c(biofilm_genes, efflux_genes, persistent_genes))
+
+# --- Desired sample order ---
+desired_samples <- c(
+  "CN02_S07", "CN02_S04", "CN02_S01", "CN01_S07", "CN01_S04", "CN01_S01",
+  "AZ05_S07", "AZ05_S04", "AZ05_S01", "AZ04_S07", "AZ04_S04", "AZ04_S01",
+  "AZ03_S07", "AZ03_S04", "AZ03_S01", "AZ02_S07", "AZ02_S04", "AZ02_S01",
+  "AZ01_S07", "AZ01_S04", "AZ01_S01"
+)
+
+# --- Filter, simplify, and mark presence ---
+blastedvariants_simple <- blastedvariants2 %>%
+  select(Gene.Symbol, Sample, qseqid) %>%
+  filter(Gene.Symbol %in% all_genes) %>%
+  distinct() %>%
+  # Assign categories
+  mutate(
+    Category = case_when(
+      Gene.Symbol %in% biofilm_genes ~ "Biofilm",
+      Gene.Symbol %in% efflux_genes ~ "Efflux/Transport",
+      Gene.Symbol %in% persistent_genes ~ "Persistent shared",
+      TRUE ~ NA_character_
+    ),
+    # Evolution condition based on Sample name
+    Evolution_conditions = case_when(
+      grepl("^AZ", Sample) ~ "Azithromycin",
+      grepl("^CN", Sample) ~ "NoAzithromycin",
+      TRUE ~ NA_character_
+    ),
+    Present = !is.na(qseqid)
+  ) %>%
+  # Fill in missing Gene-Sample combinations per category
+  complete(
+    Gene.Symbol = all_genes,
+    Sample = desired_samples,
+    fill = list(Evolution_conditions = NA, Present = FALSE, Category = NA)
+  ) %>%
+  mutate(
+    Sample = factor(Sample, levels = desired_samples),
+    Gene.Symbol = factor(Gene.Symbol, levels = all_genes)
+  )
+
+# --- Plot with facets ---
+ggplot(blastedvariants_simple, aes(x = Gene.Symbol, y = Sample)) +
+  geom_tile(aes(fill = ifelse(Present, Evolution_conditions, NA)), color = "gray50", size = 0.5) +
+  scale_fill_manual(
+    values = c("Azithromycin" = "#FFC107", "NoAzithromycin" = "#1E88E5"),
+    na.value = "white"
+  ) +
+  labs(
+    title = "Genes with AZ or CN variants by category",
+    x = "Gene",
+    y = "Sample",
+    fill = "Evolution condition"
+  ) +
+  facet_grid(. ~ Category, scales = "free_x", space = "free_x") +
+  theme_minimal() +
+  theme(
+    panel.background = element_rect(fill = "white", color = NA),
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.grid.major = element_line(color = "gray80"),
+    panel.grid.minor = element_line(color = "gray90"),
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 7),
+    axis.text.y = element_text(size = 10),
+    strip.text.x = element_text(size = 9, face = "bold")
+  )
+
+
+
+```
+
+```{r}
+# library(dplyr)
+# library(tidyr)
+# library(ggplot2)
+# 
+# # --- Genes of interest by category ---
+# biofilm_genes <- c("ycgV", "csgA", "csgC", "fimC", "fimF", "fimI",
+#                    "ybjK", "wcaC", "wcaD", "fliS", "fliT", "ampH")
+# efflux_genes <- c("sbmA", "acrR", "kefA", "yifK", "yjhB", "fadL")
+# persistent_genes <- c("frmA", "frmR", "yaiO", "stfP", "tfaP", "tfaE",
+#                       "stfE", "pinE", "yfcA", "mepA", "fadL", "yfdF",
+#                       "yifK", "aslB", "rpoB", "rpoC", "yjjZ", "rsmC",
+#                       "yjtD", "thrA")
+# 
+# all_genes <- unique(c(biofilm_genes, efflux_genes, persistent_genes))
+# 
+# # --- Desired sample order ---
+# desired_samples <- c(
+#   "CN02_S07", "CN02_S04", "CN02_S01", "CN01_S07", "CN01_S04", "CN01_S01",
+#   "AZ05_S07", "AZ05_S04", "AZ05_S01", "AZ04_S07", "AZ04_S04", "AZ04_S01",
+#   "AZ03_S07", "AZ03_S04", "AZ03_S01", "AZ02_S07", "AZ02_S04", "AZ02_S01",
+#   "AZ01_S07", "AZ01_S04", "AZ01_S01"
+# )
+# 
+# # --- Filter, simplify, and mark presence ---
+# blastedvariants_simple <- blastedvariants2 %>%
+#   select(Gene.Symbol, Sample, qseqid) %>%
+#   filter(Gene.Symbol %in% all_genes) %>%
+#   distinct() %>%
+#   # Assign categories
+#   mutate(
+#     Category = case_when(
+#       Gene.Symbol %in% biofilm_genes ~ "Biofilm",
+#       Gene.Symbol %in% efflux_genes ~ "Efflux/Transport",
+#       Gene.Symbol %in% persistent_genes ~ "Persistent shared",
+#       TRUE ~ NA_character_
+#     ),
+#     # Evolution condition based on Sample name
+#     Evolution_conditions = case_when(
+#       grepl("^AZ", Sample) ~ "Azithromycin",
+#       grepl("^CN", Sample) ~ "NoAzithromycin",
+#       TRUE ~ NA_character_
+#     ),
+#     Present = !is.na(qseqid)
+#   ) %>%
+#   # Fill in missing Gene-Sample combinations per category
+#   complete(
+#     Gene.Symbol = all_genes,
+#     Sample = desired_samples,
+#     fill = list(Evolution_conditions = NA, Present = FALSE, Category = NA)
+#   ) %>%
+#   mutate(
+#     Sample = factor(Sample, levels = desired_samples),
+#     Gene.Symbol = factor(Gene.Symbol, levels = all_genes)
+#   )
+# 
+# # --- Manually duplicate fadL into both categories ---
+# fadL_rows <- blastedvariants_simple %>% filter(Gene.Symbol == "fadL")
+# fadL_efflux <- fadL_rows %>% mutate(Category = "Efflux/Transport")
+# fadL_persistent <- fadL_rows %>% mutate(Category = "Persistent shared")
+# 
+# blastedvariants_simple <- blastedvariants_simple %>%
+#   filter(Gene.Symbol != "fadL") %>%  # remove any old inconsistent fadL category
+#   bind_rows(fadL_efflux, fadL_persistent)
+# 
+# # --- Plot with facets ---
+# ggplot(blastedvariants_simple, aes(x = Gene.Symbol, y = Sample)) +
+#   geom_tile(aes(fill = ifelse(Present, Evolution_conditions, NA)), 
+#             color = "gray50", size = 0.5) +
+#   scale_fill_manual(
+#     values = c("Azithromycin" = "#FFC107", "NoAzithromycin" = "#1E88E5"),
+#     na.value = "white"
+#   ) +
+#   labs(
+#     title = "Genes with AZ or CN variants by category",
+#     x = "Gene",
+#     y = "Sample",
+#     fill = "Evolution condition"
+#   ) +
+#   facet_grid(. ~ Category, scales = "free_x", space = "free_x") +
+#   theme_minimal() +
+#   theme(
+#     panel.background = element_rect(fill = "white", color = NA),
+#     plot.background = element_rect(fill = "white", color = NA),
+#     panel.grid.major = element_line(color = "gray80"),
+#     panel.grid.minor = element_line(color = "gray90"),
+#     axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 7),
+#     axis.text.y = element_text(size = 10),
+#     strip.text.x = element_text(size = 9, face = "bold")
+#   )
+
+```
+```{r}
+
+# library(dplyr)
+# library(tidyr)
+# library(ggplot2)
+# 
+# # --- Genes of interest by category ---
+# biofilm_genes <- c("ycgV", "csgA", "csgC", "fimC", "fimF", "fimI",
+#                    "ybjK", "wcaC", "wcaD", "fliS", "fliT", "ampH")
+# efflux_genes <- c("sbmA", "acrR", "kefA", "yifK", "yjhB", "fadL")
+# persistent_genes <- c("frmA", "frmR", "yaiO", "stfP", "tfaP", "tfaE",
+#                       "stfE", "pinE", "yfcA", "mepA", "fadL", "yfdF",
+#                       "yifK", "aslB", "rpoB", "rpoC", "yjjZ", "rsmC",
+#                       "yjtD", "thrA")
+# 
+# all_genes <- unique(c(biofilm_genes, efflux_genes, persistent_genes))
+# 
+# # --- Desired sample order ---
+# desired_samples <- c(
+#   "CN02_S07", "CN02_S04", "CN02_S01", "CN01_S07", "CN01_S04", "CN01_S01",
+#   "AZ05_S07", "AZ05_S04", "AZ05_S01", "AZ04_S07", "AZ04_S04", "AZ04_S01",
+#   "AZ03_S07", "AZ03_S04", "AZ03_S01", "AZ02_S07", "AZ02_S04", "AZ02_S01",
+#   "AZ01_S07", "AZ01_S04", "AZ01_S01"
+# )
+# 
+# # --- Filter, simplify, and mark presence ---
+# blastedvariants_simple <- blastedvariants2 %>%
+#   select(Gene.Symbol, Sample, qseqid) %>%
+#   filter(Gene.Symbol %in% all_genes) %>%
+#   distinct() %>%
+#   # Assign categories
+#   mutate(
+#     Category = case_when(
+#       Gene.Symbol %in% biofilm_genes ~ "Biofilm",
+#       Gene.Symbol %in% efflux_genes ~ "Efflux/Transport",
+#       Gene.Symbol %in% persistent_genes ~ "Persistent shared",
+#       TRUE ~ NA_character_
+#     ),
+#     # Evolution condition based on Sample name
+#     Evolution_conditions = case_when(
+#       grepl("^AZ", Sample) ~ "Azithromycin",
+#       grepl("^CN", Sample) ~ "NoAzithromycin",
+#       TRUE ~ NA_character_
+#     ),
+#     Present = !is.na(qseqid)
+#   ) %>%
+#   # Fill in missing Gene-Sample combinations per category
+#   complete(
+#     Gene.Symbol = all_genes,
+#     Sample = desired_samples,
+#     fill = list(Evolution_conditions = NA, Present = FALSE, Category = NA)
+#   ) %>%
+#   mutate(
+#     Sample = factor(Sample, levels = desired_samples)
+#   )
+# 
+# # --- Manually duplicate fadL into both categories ---
+# fadL_rows <- blastedvariants_simple %>% filter(Gene.Symbol == "fadL")
+# fadL_efflux <- fadL_rows %>% mutate(Category = "Efflux/Transport")
+# fadL_persistent <- fadL_rows %>% mutate(Category = "Persistent shared")
+# 
+# blastedvariants_simple <- blastedvariants_simple %>%
+#   filter(Gene.Symbol != "fadL") %>%  # remove old inconsistent fadL category
+#   bind_rows(fadL_efflux, fadL_persistent)
+# 
+# # --- Set gene ordering PER CATEGORY ---
+# blastedvariants_simple <- blastedvariants_simple %>%
+#   mutate(
+#     Gene.Symbol = case_when(
+#       Category == "Biofilm" ~ factor(Gene.Symbol, levels = biofilm_genes),
+#       Category == "Efflux/Transport" ~ factor(Gene.Symbol, levels = efflux_genes),
+#       Category == "Persistent shared" ~ factor(Gene.Symbol, levels = persistent_genes),
+#       TRUE ~ factor(Gene.Symbol, levels = all_genes) # fallback
+#     )
+#   )
+# 
+# # --- Plot with facets ---
+# ggplot(blastedvariants_simple, aes(x = Gene.Symbol, y = Sample)) +
+#   geom_tile(aes(fill = ifelse(Present, Evolution_conditions, NA)), 
+#             color = "gray50", size = 0.5) +
+#   scale_fill_manual(
+#     values = c("Azithromycin" = "#FFC107", "NoAzithromycin" = "#1E88E5"),
+#     na.value = "white"
+#   ) +
+#   labs(
+#     title = "Genes with AZ or CN variants by category",
+#     x = "Gene",
+#     y = "Sample",
+#     fill = "Evolution condition"
+#   ) +
+#   facet_grid(. ~ Category, scales = "free_x", space = "free_x") +
+#   theme_minimal() +
+#   theme(
+#     panel.background = element_rect(fill = "white", color = NA),
+#     plot.background = element_rect(fill = "white", color = NA),
+#     panel.grid.major = element_line(color = "gray80"),
+#     panel.grid.minor = element_line(color = "gray90"),
+#     axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 7),
+#     axis.text.y = element_text(size = 10),
+#     strip.text.x = element_text(size = 9, face = "bold")
+#   )
+
+```
+```{r}
+
+# library(dplyr)
+# library(tidyr)
+# library(ggplot2)
+# 
+# # --- Genes of interest by category ---
+# biofilm_genes <- c("ycgV", "csgA", "csgC", "fimC", "fimF", "fimI",
+#                    "ybjK", "wcaC", "wcaD", "fliS", "fliT", "ampH")
+# efflux_genes <- c("sbmA", "acrR", "kefA", "yifK", "yjhB", "fadL")
+# persistent_genes <- c("frmA", "frmR", "yaiO", "stfP", "tfaP", "tfaE",
+#                       "stfE", "pinE", "yfcA", "mepA", "fadL", "yfdF",
+#                       "yifK", "aslB", "rpoB", "rpoC", "yjjZ", "rsmC",
+#                       "yjtD", "thrA")
+# 
+# all_genes <- unique(c(biofilm_genes, efflux_genes, persistent_genes))
+# 
+# # --- Desired sample order ---
+# desired_samples <- c(
+#   "CN02_S07", "CN02_S04", "CN02_S01", "CN01_S07", "CN01_S04", "CN01_S01",
+#   "AZ05_S07", "AZ05_S04", "AZ05_S01", "AZ04_S07", "AZ04_S04", "AZ04_S01",
+#   "AZ03_S07", "AZ03_S04", "AZ03_S01", "AZ02_S07", "AZ02_S04", "AZ02_S01",
+#   "AZ01_S07", "AZ01_S04", "AZ01_S01"
+# )
+# 
+# # --- Filter, simplify, and mark presence ---
+# blastedvariants_simple <- blastedvariants2 %>%
+#   select(Gene.Symbol, Sample, qseqid) %>%
+#   filter(Gene.Symbol %in% all_genes) %>%
+#   distinct() %>%
+#   # Assign categories
+#   mutate(
+#     Category = case_when(
+#       Gene.Symbol %in% biofilm_genes ~ "Biofilm",
+#       Gene.Symbol %in% efflux_genes ~ "Efflux/Transport",
+#       Gene.Symbol %in% persistent_genes ~ "Persistent shared",
+#       TRUE ~ NA_character_
+#     ),
+#     # Evolution condition based on Sample name
+#     Evolution_conditions = case_when(
+#       grepl("^AZ", Sample) ~ "Azithromycin",
+#       grepl("^CN", Sample) ~ "NoAzithromycin",
+#       TRUE ~ NA_character_
+#     ),
+#     Present = !is.na(qseqid)
+#   ) %>%
+#   # Fill in missing Gene-Sample combinations per category
+#   complete(
+#     Gene.Symbol = all_genes,
+#     Sample = desired_samples,
+#     fill = list(Evolution_conditions = NA, Present = FALSE, Category = NA)
+#   ) %>%
+#   mutate(
+#     Sample = factor(Sample, levels = desired_samples)
+#   )
+# 
+# # --- Manually duplicate fadL into both categories ---
+# fadL_rows <- blastedvariants_simple %>% filter(Gene.Symbol == "fadL")
+# fadL_efflux <- fadL_rows %>% mutate(Category = "Efflux/Transport")
+# # Append invisible zero-width space for persistent category
+# fadL_persistent <- fadL_rows %>% mutate(Category = "Persistent shared",
+#                                         Gene.Symbol = paste0(Gene.Symbol, "\u200B"))
+# 
+# blastedvariants_simple <- blastedvariants_simple %>%
+#   filter(Gene.Symbol != "fadL") %>%
+#   bind_rows(fadL_efflux, fadL_persistent)
+# 
+# # --- Assign per-facet gene ordering ---
+# blastedvariants_simple <- blastedvariants_simple %>%
+#   mutate(
+#     Gene.Symbol = case_when(
+#       Category == "Biofilm" ~ factor(Gene.Symbol, levels = biofilm_genes),
+#       Category == "Efflux/Transport" ~ factor(Gene.Symbol, levels = efflux_genes),
+#       Category == "Persistent shared" ~ factor(Gene.Symbol, 
+#                                                 levels = c(persistent_genes[persistent_genes != "fadL"], "fadL\u200B")),
+#       TRUE ~ factor(Gene.Symbol)
+#     )
+#   )
+# 
+# # --- Plot with facets ---
+# ggplot(blastedvariants_simple, aes(x = Gene.Symbol, y = Sample)) +
+#   geom_tile(aes(fill = ifelse(Present, Evolution_conditions, NA)),
+#             color = "gray50", size = 0.5) +
+#   scale_fill_manual(
+#     values = c("Azithromycin" = "#FFC107", "NoAzithromycin" = "#1E88E5"),
+#     na.value = "white"
+#   ) +
+#   labs(
+#     title = "Genes with AZ or CN variants by category",
+#     x = "Gene",
+#     y = "Sample",
+#     fill = "Evolution condition"
+#   ) +
+#   facet_grid(. ~ Category, scales = "free_x", space = "free_x") +
+#   theme_minimal() +
+#   theme(
+#     panel.background = element_rect(fill = "white", color = NA),
+#     plot.background = element_rect(fill = "white", color = NA),
+#     panel.grid.major = element_line(color = "gray80"),
+#     panel.grid.minor = element_line(color = "gray90"),
+#     axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 7),
+#     axis.text.y = element_text(size = 10),
+#     strip.text.x = element_text(size = 9, face = "bold")
+#   )
+
+```
+
+```{r}
+
+# library(dplyr)
+# library(tidyr)
+# library(ggplot2)
+# 
+# # --- Genes of interest by category ---
+# biofilm_genes <- c("ycgV", "csgA", "csgC", "fimC", "fimF", "fimI",
+#                    "ybjK", "wcaC", "wcaD", "fliS", "fliT", "ampH")
+# efflux_genes <- c("sbmA", "acrR", "kefA", "yifK", "yjhB", "fadL")
+# persistent_genes <- c("frmA", "frmR", "yaiO", "stfP", "tfaP", "tfaE",
+#                       "stfE", "pinE", "yfcA", "mepA", "fadL", "yfdF",
+#                       "yifK", "aslB", "rpoB", "rpoC", "yjjZ", "rsmC",
+#                       "yjtD", "thrA")
+# 
+# all_genes <- unique(c(biofilm_genes, efflux_genes, persistent_genes))
+# 
+# # --- Desired sample order ---
+# desired_samples <- c(
+#   "CN02_S07", "CN02_S04", "CN02_S01", "CN01_S07", "CN01_S04", "CN01_S01",
+#   "AZ05_S07", "AZ05_S04", "AZ05_S01", "AZ04_S07", "AZ04_S04", "AZ04_S01",
+#   "AZ03_S07", "AZ03_S04", "AZ03_S01", "AZ02_S07", "AZ02_S04", "AZ02_S01",
+#   "AZ01_S07", "AZ01_S04", "AZ01_S01"
+# )
+# 
+# # --- Filter, simplify, and mark presence ---
+# blastedvariants_simple <- blastedvariants2 %>%
+#   select(Gene.Symbol, Sample, qseqid) %>%
+#   filter(Gene.Symbol %in% all_genes) %>%
+#   distinct() %>%
+#   # Assign categories
+#   mutate(
+#     Category = case_when(
+#       Gene.Symbol %in% biofilm_genes ~ "Biofilm",
+#       Gene.Symbol %in% efflux_genes ~ "Efflux or Transport",  # changed label with line break later
+#       Gene.Symbol %in% persistent_genes ~ "Persistent shared",
+#       TRUE ~ NA_character_
+#     ),
+#     # Evolution condition based on Sample name
+#     Evolution_conditions = case_when(
+#       grepl("^AZ", Sample) ~ "Azithromycin",
+#       grepl("^CN", Sample) ~ "NoAzithromycin",
+#       TRUE ~ NA_character_
+#     ),
+#     Present = !is.na(qseqid)
+#   ) %>%
+#   # Fill in missing Gene-Sample combinations per category
+#   complete(
+#     Gene.Symbol = all_genes,
+#     Sample = desired_samples,
+#     fill = list(Evolution_conditions = NA, Present = FALSE, Category = NA)
+#   ) %>%
+#   mutate(
+#     Sample = factor(Sample, levels = desired_samples)
+#   )
+# 
+# # --- Manually duplicate fadL into both categories ---
+# fadL_rows <- blastedvariants_simple %>% filter(Gene.Symbol == "fadL")
+# fadL_efflux <- fadL_rows %>% mutate(Category = "Efflux or Transport")
+# fadL_persistent <- fadL_rows %>% mutate(Category = "Persistent shared",
+#                                         Gene.Symbol = paste0(Gene.Symbol, "\u200B"))
+# 
+# blastedvariants_simple <- blastedvariants_simple %>%
+#   filter(Gene.Symbol != "fadL") %>%
+#   bind_rows(fadL_efflux, fadL_persistent)
+# 
+# # --- Assign per-facet gene ordering ---
+# blastedvariants_simple <- blastedvariants_simple %>%
+#   mutate(
+#     Gene.Symbol = case_when(
+#       Category == "Biofilm" ~ factor(Gene.Symbol, levels = biofilm_genes),
+#       Category == "Efflux or Transport" ~ factor(Gene.Symbol, levels = efflux_genes),
+#       Category == "Persistent shared" ~ factor(Gene.Symbol, 
+#                                                levels = c(persistent_genes[persistent_genes != "fadL"], "fadL\u200B")),
+#       TRUE ~ factor(Gene.Symbol)
+#     ),
+#     # Add line break to facet label
+#     Category = case_when(
+#       Category == "Efflux or Transport" ~ "Efflux or\nTransport",
+#       TRUE ~ Category
+#     )
+#   )
+# 
+# # --- Plot with facets ---
+# ggplot(blastedvariants_simple, aes(x = Gene.Symbol, y = Sample)) +
+#   geom_tile(aes(fill = ifelse(Present, Evolution_conditions, NA)),
+#             color = "gray50", size = 0.5) +
+#   scale_fill_manual(
+#     values = c("Azithromycin" = "#FFC107", "NoAzithromycin" = "#1E88E5"),
+#     na.value = "white"
+#   ) +
+#   labs(
+#     title = "Genes with AZ or CN variants by category",
+#     x = "Gene",
+#     y = "Sample",
+#     fill = "Evolution condition"
+#   ) +
+#   facet_grid(. ~ Category, scales = "free_x", space = "free_x") +
+#   theme_minimal() +
+#   theme(
+#     panel.background = element_rect(fill = "white", color = NA),
+#     plot.background = element_rect(fill = "white", color = NA),
+#     panel.grid.major = element_line(color = "gray80"),
+#     panel.grid.minor = element_line(color = "gray90"),
+#     axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 7),
+#     axis.text.y = element_text(size = 10),
+#     strip.text.x = element_text(size = 9, face = "bold")
+#   )
+# 
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# --- Genes of interest by category ---
+biofilm_genes <- c("ycgV", "csgA", "csgC", "fimC", "fimF", "fimI",
+                   "ybjK", "wcaC", "wcaD", "fliS", "fliT", "ampH")
+efflux_genes <- c("sbmA", "acrR", "kefA", "yifK", "yjhB", "fadL")
+persistent_genes <- c("frmA", "frmR", "yaiO", "stfP", "tfaP", "tfaE",
+                      "stfE", "pinE", "yfcA", "mepA", "fadL", "yfdF",
+                      "yifK", "aslB", "rpoB", "rpoC", "yjjZ", "rsmC",
+                      "yjtD", "thrA")
+
+all_genes <- unique(c(biofilm_genes, efflux_genes, persistent_genes))
+
+# --- Desired sample order ---
+desired_samples <- c(
+  "CN02_S07", "CN02_S04", "CN02_S01", "CN01_S07", "CN01_S04", "CN01_S01",
+  "AZ05_S07", "AZ05_S04", "AZ05_S01", "AZ04_S07", "AZ04_S04", "AZ04_S01",
+  "AZ03_S07", "AZ03_S04", "AZ03_S01", "AZ02_S07", "AZ02_S04", "AZ02_S01",
+  "AZ01_S07", "AZ01_S04", "AZ01_S01"
+)
+
+# --- Filter, simplify, and mark presence ---
+blastedvariants_simple <- blastedvariants2 %>%
+  select(Gene.Symbol, Sample, qseqid) %>%
+  filter(Gene.Symbol %in% all_genes) %>%
+  distinct() %>%
+  mutate(
+    Category = case_when(
+      Gene.Symbol %in% biofilm_genes ~ "Biofilm",
+      Gene.Symbol %in% efflux_genes ~ "Efflux or Transport",
+      Gene.Symbol %in% persistent_genes ~ "Persistent shared",
+      TRUE ~ NA_character_
+    ),
+    Evolution_conditions = case_when(
+      grepl("^AZ", Sample) ~ "Azithromycin",
+      grepl("^CN", Sample) ~ "NoAzithromycin",
+      TRUE ~ NA_character_
+    ),
+    Present = !is.na(qseqid)
+  ) %>%
+  complete(
+    Gene.Symbol = all_genes,
+    Sample = desired_samples,
+    fill = list(Evolution_conditions = NA, Present = FALSE, Category = NA)
+  ) %>%
+  mutate(Sample = factor(Sample, levels = desired_samples))
+
+# --- Duplicate fadL into both categories ---
+fadL_rows <- blastedvariants_simple %>% filter(Gene.Symbol == "fadL")
+fadL_efflux <- fadL_rows %>% mutate(Category = "Efflux or Transport")
+fadL_persistent <- fadL_rows %>% mutate(Category = "Persistent shared",
+                                        Gene.Symbol = paste0(Gene.Symbol, "\u200B"))
+
+blastedvariants_simple <- blastedvariants_simple %>%
+  filter(Gene.Symbol != "fadL") %>%
+  bind_rows(fadL_efflux, fadL_persistent)
+
+# --- Ordering and facet label adjustment ---
+blastedvariants_simple <- blastedvariants_simple %>%
+  mutate(
+    Gene.Symbol = case_when(
+      Category == "Biofilm" ~ factor(Gene.Symbol, levels = biofilm_genes),
+      Category == "Efflux or Transport" ~ factor(Gene.Symbol, levels = efflux_genes),
+      Category == "Persistent shared" ~ factor(Gene.Symbol,
+                                               levels = c(persistent_genes[persistent_genes != "fadL"], "fadL\u200B")),
+      TRUE ~ factor(Gene.Symbol)
+    ),
+    Category = case_when(
+      Category == "Efflux or Transport" ~ "Efflux or\nTransport",
+      TRUE ~ Category
+    )
+  )
+
+# --- Plot with dark facet borders ---
+ggplot(blastedvariants_simple, aes(x = Gene.Symbol, y = Sample)) +
+  geom_tile(aes(fill = ifelse(Present, Evolution_conditions, NA)),
+            color = "gray50", size = 0.5) +
+  scale_fill_manual(
+    values = c("Azithromycin" = "#FFC107", "NoAzithromycin" = "#1E88E5"),
+    na.value = "white"
+  ) +
+  labs(
+    title = "Genes with AZ or CN variants by category",
+    x = "Gene",
+    y = "Sample",
+    fill = "Evolution condition"
+  ) +
+  facet_grid(. ~ Category, scales = "free_x", space = "free_x") +
+  theme_minimal() +
+  theme(
+    panel.background = element_rect(fill = "white", color = "black"),  # dark border
+    panel.border = element_rect(color = "black", fill = NA, size = 1), # thick black facet border
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.grid.major = element_line(color = "gray80"),
+    panel.grid.minor = element_line(color = "gray90"),
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 7),
+    axis.text.y = element_text(size = 10),
+    strip.text.x = element_text(size = 9, face = "bold"),
+    strip.background = element_rect(fill = "white", color = "black", size = 1) # border around facet labels
+  )
+# --- Save the plot as a high-resolution PNG ---
+# ggsave(
+#   filename = "genes_variant_heatmap.png",   # file name
+#   plot = last_plot(),                       # saves the last plot
+#   width = 12,                               # width in inches
+#   height = 6,                               # height in inches
+#   dpi = 300                                 # resolution in dots per inch
+# )
+```
+```{r}
+# 
+# library(dplyr)
+# library(tidyr)
+# library(ggplot2)
+# 
+# # --- Genes of interest by category ---
+# biofilm_genes <- c("ycgV", "csgA", "csgC", "fimC", "fimF", "fimI",
+#                    "ybjK", "wcaC", "wcaD", "fliS", "fliT", "ampH")
+# efflux_genes <- c("sbmA", "acrR", "kefA", "yifK", "yjhB", "fadL")
+# persistent_genes <- c("frmA", "frmR", "yaiO", "stfP", "tfaP", "tfaE",
+#                       "stfE", "pinE", "yfcA", "mepA", "fadL", "yfdF",
+#                       "yifK", "aslB", "rpoB", "rpoC", "yjjZ", "rsmC",
+#                       "yjtD", "thrA")
+# 
+# all_genes <- unique(c(biofilm_genes, efflux_genes, persistent_genes))
+# 
+# # --- Desired sample order ---
+# desired_samples <- c(
+#   "CN02_S07", "CN02_S04", "CN02_S01", "CN01_S07", "CN01_S04", "CN01_S01",
+#   "AZ05_S07", "AZ05_S04", "AZ05_S01", "AZ04_S07", "AZ04_S04", "AZ04_S01",
+#   "AZ03_S07", "AZ03_S04", "AZ03_S01", "AZ02_S07", "AZ02_S04", "AZ02_S01",
+#   "AZ01_S07", "AZ01_S04", "AZ01_S01"
+# )
+# 
+# # --- Filter, simplify, and mark presence ---
+# blastedvariants_simple <- blastedvariants2 %>%
+#   select(Gene.Symbol, Sample, qseqid) %>%
+#   filter(Gene.Symbol %in% all_genes) %>%
+#   distinct() %>%
+#   mutate(
+#     Category = case_when(
+#       Gene.Symbol %in% biofilm_genes ~ "Biofilm",
+#       Gene.Symbol %in% efflux_genes ~ "Efflux or Transport",
+#       Gene.Symbol %in% persistent_genes ~ "Persistent shared",
+#       TRUE ~ NA_character_
+#     ),
+#     Evolution_conditions = case_when(
+#       grepl("^AZ", Sample) ~ "Azithromycin",
+#       grepl("^CN", Sample) ~ "No Azithromycin",
+#       TRUE ~ NA_character_
+#     ),
+#     Present = !is.na(qseqid)
+#   ) %>%
+#   complete(
+#     Gene.Symbol = all_genes,
+#     Sample = desired_samples,
+#     fill = list(Evolution_conditions = NA, Present = FALSE, Category = NA)
+#   ) %>%
+#   mutate(Sample = factor(Sample, levels = desired_samples))
+# 
+# # --- Duplicate fadL into both categories ---
+# fadL_rows <- blastedvariants_simple %>% filter(Gene.Symbol == "fadL")
+# fadL_efflux <- fadL_rows %>% mutate(Category = "Efflux or Transport")
+# fadL_persistent <- fadL_rows %>% mutate(Category = "Persistent shared",
+#                                         Gene.Symbol = paste0(Gene.Symbol, "\u200B"))
+# 
+# blastedvariants_simple <- blastedvariants_simple %>%
+#   filter(Gene.Symbol != "fadL") %>%
+#   bind_rows(fadL_efflux, fadL_persistent)
+# 
+# # --- Ordering and facet label adjustment ---
+# blastedvariants_simple <- blastedvariants_simple %>%
+#   mutate(
+#     Gene.Symbol = case_when(
+#       Category == "Biofilm" ~ factor(Gene.Symbol, levels = biofilm_genes),
+#       Category == "Efflux or Transport" ~ factor(Gene.Symbol, levels = efflux_genes),
+#       Category == "Persistent shared" ~ factor(Gene.Symbol,
+#                                                levels = c(persistent_genes[persistent_genes != "fadL"], "fadL\u200B")),
+#       TRUE ~ factor(Gene.Symbol)
+#     ),
+#     Category = case_when(
+#       Category == "Efflux or Transport" ~ "Efflux or\nTransport",
+#       TRUE ~ Category
+#     )
+#   )
+# 
+# # --- Plot with dark facet borders and updated legend ---
+# ggplot(blastedvariants_simple, aes(x = Gene.Symbol, y = Sample)) +
+#   geom_tile(aes(fill = ifelse(Present, Evolution_conditions, NA)),
+#             color = "gray50", size = 0.5) +
+#   scale_fill_manual(
+#     values = c("Azithromycin" = "#FFC107", "No Azithromycin" = "#1E88E5"),
+#     na.value = "white",
+#     labels = c("Azithromycin", "No Azithromycin")  # explicitly rename legend entries
+#   ) +
+#   labs(
+#     title = "Genes with AZ or CN variants by category",
+#     x = "Gene",
+#     y = "Sample",
+#     fill = "Evolution condition"
+#   ) +
+#   facet_grid(. ~ Category, scales = "free_x", space = "free_x") +
+#   theme_minimal() +
+#   theme(
+#     panel.background = element_rect(fill = "white", color = "black"),
+#     panel.border = element_rect(color = "black", fill = NA, size = 1),
+#     plot.background = element_rect(fill = "white", color = NA),
+#     panel.grid.major = element_line(color = "gray80"),
+#     panel.grid.minor = element_line(color = "gray90"),
+#     axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 7),
+#     axis.text.y = element_text(size = 10),
+#     strip.text.x = element_text(size = 9, face = "bold"),
+#     strip.background = element_rect(fill = "white", color = "black", size = 0.5)
+#   )
+# 
+# 
+```
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# --- Genes of interest by category ---
+biofilm_genes <- c("ycgV", "csgA", "csgC", "fimC", "fimF", "fimI",
+                   "ybjK", "wcaC", "wcaD", "fliS", "fliT", "ampH")
+efflux_genes <- c("sbmA", "acrR", "kefA", "yifK", "yjhB", "fadL")
+persistent_genes <- c("frmA", "frmR", "yaiO", "yfcA", "mepA", "stfP", "tfaP", "tfaE",
+                      "stfE", "pinE", "aslB", "yjtD", "rpoB", "rpoC", "rsmC",
+                      "fadL", "thrA", "yfdF", "yjjZ")
+
+all_genes <- unique(c(biofilm_genes, efflux_genes, persistent_genes))
+
+# --- Desired sample order ---
+desired_samples <- c(
+  "CN02_S07", "CN02_S04", "CN02_S01", "CN01_S07", "CN01_S04", "CN01_S01",
+  "AZ05_S07", "AZ05_S04", "AZ05_S01", "AZ04_S07", "AZ04_S04", "AZ04_S01",
+  "AZ03_S07", "AZ03_S04", "AZ03_S01", "AZ02_S07", "AZ02_S04", "AZ02_S01",
+  "AZ01_S07", "AZ01_S04", "AZ01_S01"
+)
+
+# --- Filter, simplify, and mark presence ---
+blastedvariants_simple <- blastedvariants2 %>%
+  select(Gene.Symbol, Sample, qseqid) %>%
+  filter(Gene.Symbol %in% all_genes) %>%
+  distinct() %>%
+  mutate(
+    Category = case_when(
+      Gene.Symbol %in% biofilm_genes ~ "Biofilm",
+      Gene.Symbol %in% efflux_genes ~ "Efflux or Transport",
+      Gene.Symbol %in% persistent_genes ~ "Persistent shared",
+      TRUE ~ NA_character_
+    ),
+    Evolution_conditions = case_when(
+      grepl("^AZ", Sample) ~ "Azithromycin",
+      grepl("^CN", Sample) ~ "No Azithromycin",
+      TRUE ~ NA_character_
+    ),
+    Present = !is.na(qseqid)
+  ) %>%
+  complete(
+    Gene.Symbol = all_genes,
+    Sample = desired_samples,
+    fill = list(Evolution_conditions = NA, Present = FALSE, Category = NA)
+  ) %>%
+  mutate(Sample = factor(Sample, levels = desired_samples))
+
+# --- Duplicate fadL into both categories ---
+fadL_rows <- blastedvariants_simple %>% filter(Gene.Symbol == "fadL")
+fadL_efflux <- fadL_rows %>% mutate(Category = "Efflux or Transport")
+fadL_persistent <- fadL_rows %>% mutate(Category = "Persistent shared",
+                                        Gene.Symbol = "fadL\u200B")  # zero-width space
+
+blastedvariants_simple <- blastedvariants_simple %>%
+  filter(Gene.Symbol != "fadL") %>%
+  bind_rows(fadL_efflux, fadL_persistent)
+
+# --- Ordering and facet label adjustment ---
+persistent_genes_ordered <- c("frmA", "frmR", "yaiO", "yfcA", "mepA", "stfP", "tfaP", "tfaE",
+                              "stfE", "pinE", "aslB", "yjtD", "rpoB", "rpoC", "rsmC",
+                              "fadL\u200B", "thrA", "yfdF", "yjjZ")
+
+blastedvariants_simple <- blastedvariants_simple %>%
+  mutate(
+    Gene.Symbol = case_when(
+      Category == "Biofilm" ~ factor(Gene.Symbol, levels = biofilm_genes),
+      Category == "Efflux or Transport" ~ factor(Gene.Symbol, levels = efflux_genes),
+      Category == "Persistent shared" ~ factor(Gene.Symbol, levels = persistent_genes_ordered),
+      TRUE ~ factor(Gene.Symbol)
+    ),
+    Category = case_when(
+      Category == "Efflux or Transport" ~ "Efflux or\nTransport",
+      TRUE ~ Category
+    )
+  )
+
+# --- Plot with dark facet borders and updated legend ---
+plotfinal <- ggplot(blastedvariants_simple, aes(x = Gene.Symbol, y = Sample)) +
+  geom_tile(aes(fill = ifelse(Present, Evolution_conditions, NA)),
+            color = "gray50", size = 0.5) +
+  scale_fill_manual(
+    values = c("Azithromycin" = "#FFC107", "No Azithromycin" = "#1E88E5"),
+    na.value = "white",
+    labels = c("Azithromycin", "No Azithromycin")  # legend labels
+  ) +
+  labs(
+    title = "Genes with AZ or CN variants by category",
+    x = "Gene",
+    y = "Sample",
+    fill = "Evolution condition"
+  ) +
+  facet_grid(. ~ Category, scales = "free_x", space = "free_x") +
+  theme_minimal() +
+  theme(
+    panel.background = element_rect(fill = "white", color = "black"),
+    panel.border = element_rect(color = "black", fill = NA, size = 1),
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.grid.major = element_line(color = "gray80"),
+    panel.grid.minor = element_line(color = "gray90"),
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 7),
+    axis.text.y = element_text(size = 10),
+    strip.text.x = element_text(size = 9, face = "bold"),
+    strip.background = element_rect(fill = "white", color = "black", size = 0.5)
+  )
+# --- Save the plot as a high-resolution PNG ---
+plotfinal
+# ggsave(
+#   filename = "genes_variant_heatmap.png",   # file name
+#   plot = last_plot(),                       # saves the last plot
+#   width = 12,                               # width in inches
+#   height = 6,                               # height in inches
+#   dpi = 300  )
+```
+
+```{r}
+
+plotfinal <- ggplot(blastedvariants_simple, aes(x = Gene.Symbol, y = Sample)) +
+  geom_tile(aes(fill = ifelse(Present, Evolution_conditions, NA)),
+            color = "gray50", size = 0.5) +
+  scale_fill_manual(
+    values = c("Azithromycin" = "#FFC107", "No Azithromycin" = "#1E88E5"),
+    na.value = "white",
+    labels = c("Azithromycin", "No Azithromycin")
+  ) +
+  labs(
+    title = "Genes with AZ or CN variants by category",
+    x = "Gene",
+    y = "Sample",
+    fill = "Evolution condition"
+  ) +
+  facet_grid(. ~ Category, scales = "free_x", space = "free_x") +
+  theme_minimal() +
+  theme(
+    panel.background = element_rect(fill = "white", color = "black"),
+    panel.border = element_rect(color = "black", fill = NA, size = 1),
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.grid.major = element_line(color = "gray80"),
+    panel.grid.minor = element_line(color = "gray90"),
+    axis.text.x = element_text(
+      angle = 90, hjust = 1, vjust = 0.5, size = 7,
+      face = "italic"   # <-- make gene names italic
+    ),
+    axis.text.y = element_text(size = 10),
+    strip.text.x = element_text(size = 9, face = "bold"),
+    strip.background = element_rect(fill = "white", color = "black", size = 0.5)
+  )
+plotfinal
+# ggsave(
+#   filename = "genes_variant_heatmap.png",   # file name
+#   plot = last_plot(),                       # saves the last plot
+#   width = 12,                               # width in inches
+#   height = 6,                               # height in inches
+#   dpi = 300  )
+
+```
+
+```{r}
+
+plotfinal <- ggplot(blastedvariants_simple, aes(x = Gene.Symbol, y = Sample)) +
+  geom_tile(aes(fill = ifelse(Present, Evolution_conditions, NA)),
+            color = "gray50", size = 0.5) +
+  scale_fill_manual(
+    values = c("Azithromycin" = "#FFC107", "No Azithromycin" = "#1E88E5"),
+    na.value = "white",
+    labels = c("Azithromycin", "No Azithromycin")
+  ) +
+  labs(
+    title = "Genes with AZ or CN variants by category",
+    x = "Gene",
+    y = "Sample",
+    fill = "Evolution condition"
+  ) +
+  facet_grid(. ~ Category, scales = "free_x", space = "free_x") +
+  theme_minimal() +
+  theme(
+    panel.background = element_rect(fill = "white", color = "black"),
+    panel.border = element_rect(color = "black", fill = NA, size = 1),
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.grid.major = element_line(color = "gray80"),
+    panel.grid.minor = element_line(color = "gray90"),
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 7, face = "italic"),
+    axis.text.y = element_text(size = 10),
+    strip.text.x = element_text(size = 9, face = "bold"),
+    strip.background = element_rect(fill = "white", color = "black", size = 0.5)
+  ) +
+  # Add horizontal lines every 3 units
+  geom_hline(yintercept = seq(3.5, length(unique(blastedvariants_simple$Sample)), by = 3), 
+             color = "black", linetype = "solid", size = 1)
+
+
+plotfinal
+
+ggsave(
+  filename = "genes_variant_heatmap.png",   # file name
+  plot = last_plot(),                       # saves the last plot
+  width = 12,                               # width in inches
+  height = 6,                               # height in inches
+  dpi = 300  )
+
+```
+
