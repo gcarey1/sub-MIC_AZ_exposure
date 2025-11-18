@@ -1,0 +1,7 @@
+Sample	Contig	Pos	Ref	Var	Score	Var_cov	Var_frac	Type	Ref_nt	Var_nt	Ref_nt_pos_change	Ref_aa_pos_change	Frameshift	Gene_ID	Locus_tag	Gene_name	Function	Upstream_feature	Downstream_feature	snpEff_type	snpEff_impact
+SE16	562.163959.con.0001	629286	GAAAA	GAA	18.4773	28	0.18	Deletion										Uncharacterized protein YgaC	L-alanine exporter AlaE	intergenic_region	MODIFIER
+SE16	562.163959.con.0001	966020	AGGGGGGGGG	AGGGGGGGG	49.5285	41	0.54	Deletion										Uncharacterized protein YfdF	Long-chain fatty acid transport protein	intergenic_region	MODIFIER
+SE16	562.163959.con.0001	2220068	G	C	123.641	17	0.16	Nonsyn	gtt	Ctt	37G>C	Val13Leu		fig|562.163959.peg.2191			Phage tail fiber, side tail fiber protein Stf	Phage DNA invertase	Tail fiber assembly protein	missense_variant	MODERATE
+SE16	562.163959.con.0001	2324738	GAAAAAAAA	GAAAAAA,GAAAAA	14.8262	47	0.31	Insertion										Putative curli production protein CsgC	Major curlin subunit precursor CsgA	intergenic_region	MODIFIER
+SE16	562.163959.con.0001	3108303	TCCCCCCC	TCCCCC,TCCCCCC	89.9736	57	0.44	Insertion										Predicted L-lactate dehydrogenase, Fe-S oxidoreductase subunit YkgE	hypothetical protein	intergenic_region	MODIFIER
+SE16	562.163959.con.0001	3201500	G	GA	228.419	239	0.98	Insertion						fig|562.163959.rna.71			LSU rRNA ## 23S rRNA, large subunit ribosomal RNA	5S rRNA ## 5S ribosomal RNA	tRNA-Ala-TGC	intergenic_region	MODIFIER

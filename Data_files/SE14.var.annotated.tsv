@@ -1,0 +1,7 @@
+Sample	Contig	Pos	Ref	Var	Score	Var_cov	Var_frac	Type	Ref_nt	Var_nt	Ref_nt_pos_change	Ref_aa_pos_change	Frameshift	Gene_ID	Locus_tag	Gene_name	Function	Upstream_feature	Downstream_feature	snpEff_type	snpEff_impact
+SE14	562.163959.con.0001	629286	GAAAA	GAA,GAAAAA	24.6553	38	0.16	Insertion										Uncharacterized protein YgaC	L-alanine exporter AlaE	intergenic_region	MODIFIER
+SE14	562.163959.con.0001	966020	AGGGGGGGGG	AGGGGGGGG	26.2219	49	0.41	Deletion										Uncharacterized protein YfdF	Long-chain fatty acid transport protein	intergenic_region	MODIFIER
+SE14	562.163959.con.0001	1992455	TAAAAAAAAA	TAAAAAAAA	18.3191	65	0.36	Deletion										Pyruvate-flavodoxin oxidoreductase	Outer membrane porin OmpN	intergenic_region	MODIFIER
+SE14	562.163959.con.0001	2173855	TCCCCCC	TCCCC,TCCC	18.3039	65	0.28	Insertion	tcccccctgctg	TCCCC,TCCCtgctg	125_127delCCC	Pro42del		fig|562.163959.peg.2141			Uncharacterized protein YcgV	hypothetical protein	Phosphoenolpyruvate-dihydroxyacetone phosphotransferase operon regulatory protein DhaR	frameshift_variant	HIGH
+SE14	562.163959.con.0001	2220068	G	C	115.725	26	0.17	Nonsyn	gtt	Ctt	37G>C	Val13Leu		fig|562.163959.peg.2191			Phage tail fiber, side tail fiber protein Stf	Phage DNA invertase	Tail fiber assembly protein	missense_variant	MODERATE
+SE14	562.163959.con.0001	3049845	GCCCCCCCCCC	GCCCCCCC,GCCCCC	107.894	56	0.33	Insertion										hypothetical protein	FrmR: Negative transcriptional regulator of formaldehyde detoxification operon	intergenic_region	MODIFIER

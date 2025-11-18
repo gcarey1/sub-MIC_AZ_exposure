@@ -1,0 +1,266 @@
+A total of 91 variants have been found. 0 of these variants are identified in all read libraries.
+
+Output summary:
+all.var.tsv             - combined sheet of annotated variants from all libraries
+all.var.html            - sortable HTML table of all annotated variants
+libs.txt                - mapping from read library to file(s)
+<LIB>.aln.bam           - minimap2 aligned reads for a read library
+<LIB>.var.vcf           - BCFtools generated high quality variants for a read library
+<LIB>.var.snpEff.vcf    - snpEff augmented VCF with variant effect prediction
+<LIB>.var.annotated.tsv - PATRIC annotated variants in a spreadsheet
+<LIB> denotes the name of a read library (e.g., PE1 for paired end 1, SE3 for single end 3).
+
+Results by read library:
+
+[1] SE1 (4HDRNF_7_filtered.fastq)
+
+    Total reads              = 189334
+    Properly mapped reads    = 189334 (100.00%)
+    Total reference bases    = 4642499
+    Median base coverage     = 414
+    Mean base coverage       = 387.5
+    Bases with zero coverage = 0 (0.000%)
+    Bases with <=10 coverage = 0 (0.000%)
+    Raw BCFtools variants    = 3
+    High quality variants    = 3
+
+[2] SE2 (4HDRNF_6_filtered.fastq)
+
+    Total reads              = 161575
+    Properly mapped reads    = 161575 (100.00%)
+    Total reference bases    = 4642499
+    Median base coverage     = 302
+    Mean base coverage       = 295.1
+    Bases with zero coverage = 0 (0.000%)
+    Bases with <=10 coverage = 0 (0.000%)
+    Raw BCFtools variants    = 28
+    High quality variants    = 28
+
+[3] SE3 (4HDRNF_8_filtered.fastq)
+
+    Total reads              = 94526
+    Properly mapped reads    = 94526 (100.00%)
+    Total reference bases    = 4642499
+    Median base coverage     = 167
+    Mean base coverage       = 160.0
+    Bases with zero coverage = 0 (0.000%)
+    Bases with <=10 coverage = 0 (0.000%)
+    Raw BCFtools variants    = 22
+    High quality variants    = 15
+
+[4] SE4 (4HDRNF_9_filtered.fastq)
+
+    Total reads              = 116939
+    Properly mapped reads    = 116939 (100.00%)
+    Total reference bases    = 4642499
+    Median base coverage     = 242
+    Mean base coverage       = 232.5
+    Bases with zero coverage = 0 (0.000%)
+    Bases with <=10 coverage = 0 (0.000%)
+    Raw BCFtools variants    = 13
+    High quality variants    = 9
+
+[5] SE5 (4HDRNF_2_filtered.fastq)
+
+    Total reads              = 78433
+    Properly mapped reads    = 78433 (100.00%)
+    Total reference bases    = 4642499
+    Median base coverage     = 156
+    Mean base coverage       = 151.9
+    Bases with zero coverage = 0 (0.000%)
+    Bases with <=10 coverage = 0 (0.000%)
+    Raw BCFtools variants    = 19
+    High quality variants    = 17
+
+[6] SE6 (4HDRNF_3_filtered.fastq)
+
+    Total reads              = 168974
+    Properly mapped reads    = 168974 (100.00%)
+    Total reference bases    = 4642499
+    Median base coverage     = 312
+    Mean base coverage       = 297.8
+    Bases with zero coverage = 0 (0.000%)
+    Bases with <=10 coverage = 0 (0.000%)
+    Raw BCFtools variants    = 27
+    High quality variants    = 27
+
+[7] SE7 (4HDRNF_5_filtered.fastq)
+
+    Total reads              = 94051
+    Properly mapped reads    = 94051 (100.00%)
+    Total reference bases    = 4642499
+    Median base coverage     = 185
+    Mean base coverage       = 179.7
+    Bases with zero coverage = 0 (0.000%)
+    Bases with <=10 coverage = 0 (0.000%)
+    Raw BCFtools variants    = 24
+    High quality variants    = 19
+
+[8] SE8 (4HDRNF_21_filtered.fastq)
+
+    Total reads              = 65749
+    Properly mapped reads    = 65749 (100.00%)
+    Total reference bases    = 4642499
+    Median base coverage     = 113
+    Mean base coverage       = 110.4
+    Bases with zero coverage = 0 (0.000%)
+    Bases with <=10 coverage = 0 (0.000%)
+    Raw BCFtools variants    = 27
+    High quality variants    = 23
+
+[9] SE9 (4HDRNF_4_filtered.fastq)
+
+    Total reads              = 72570
+    Properly mapped reads    = 72570 (100.00%)
+    Total reference bases    = 4642499
+    Median base coverage     = 107
+    Mean base coverage       = 103.8
+    Bases with zero coverage = 0 (0.000%)
+    Bases with <=10 coverage = 0 (0.000%)
+    Raw BCFtools variants    = 21
+    High quality variants    = 14
+
+[10] SE10 (4HDRNF_1_filtered.fastq)
+
+    Total reads              = 180289
+    Properly mapped reads    = 180289 (100.00%)
+    Total reference bases    = 4642499
+    Median base coverage     = 409
+    Mean base coverage       = 386.2
+    Bases with zero coverage = 0 (0.000%)
+    Bases with <=10 coverage = 0 (0.000%)
+    Raw BCFtools variants    = 3
+    High quality variants    = 3
+
+[11] SE11 (4HDRNF_19_filtered.fastq)
+
+    Total reads              = 158180
+    Properly mapped reads    = 158179 (100.00%)
+    Total reference bases    = 4642499
+    Median base coverage     = 365
+    Mean base coverage       = 351.5
+    Bases with zero coverage = 0 (0.000%)
+    Bases with <=10 coverage = 0 (0.000%)
+    Raw BCFtools variants    = 4
+    High quality variants    = 4
+
+[12] SE12 (4HDRNF_17_filtered.fastq)
+
+    Total reads              = 185443
+    Properly mapped reads    = 185443 (100.00%)
+    Total reference bases    = 4642499
+    Median base coverage     = 371
+    Mean base coverage       = 356.6
+    Bases with zero coverage = 0 (0.000%)
+    Bases with <=10 coverage = 0 (0.000%)
+    Raw BCFtools variants    = 6
+    High quality variants    = 5
+
+[13] SE13 (4HDRNF_20_filtered.fastq)
+
+    Total reads              = 110448
+    Properly mapped reads    = 110448 (100.00%)
+    Total reference bases    = 4642499
+    Median base coverage     = 222
+    Mean base coverage       = 218.6
+    Bases with zero coverage = 0 (0.000%)
+    Bases with <=10 coverage = 0 (0.000%)
+    Raw BCFtools variants    = 24
+    High quality variants    = 21
+
+[14] SE14 (4HDRNF_16_filtered.fastq)
+
+    Total reads              = 161202
+    Properly mapped reads    = 161201 (100.00%)
+    Total reference bases    = 4642499
+    Median base coverage     = 287
+    Mean base coverage       = 275.2
+    Bases with zero coverage = 0 (0.000%)
+    Bases with <=10 coverage = 0 (0.000%)
+    Raw BCFtools variants    = 7
+    High quality variants    = 6
+
+[15] SE15 (4HDRNF_18_filtered.fastq)
+
+    Total reads              = 159020
+    Properly mapped reads    = 159019 (100.00%)
+    Total reference bases    = 4642499
+    Median base coverage     = 276
+    Mean base coverage       = 267.2
+    Bases with zero coverage = 0 (0.000%)
+    Bases with <=10 coverage = 0 (0.000%)
+    Raw BCFtools variants    = 11
+    High quality variants    = 9
+
+[16] SE16 (4HDRNF_10_filtered.fastq)
+
+    Total reads              = 122972
+    Properly mapped reads    = 122972 (100.00%)
+    Total reference bases    = 4642499
+    Median base coverage     = 266
+    Mean base coverage       = 247.9
+    Bases with zero coverage = 0 (0.000%)
+    Bases with <=10 coverage = 0 (0.000%)
+    Raw BCFtools variants    = 7
+    High quality variants    = 6
+
+[17] SE17 (4HDRNF_11_filtered.fastq)
+
+    Total reads              = 68254
+    Properly mapped reads    = 68254 (100.00%)
+    Total reference bases    = 4642499
+    Median base coverage     = 138
+    Mean base coverage       = 133.5
+    Bases with zero coverage = 0 (0.000%)
+    Bases with <=10 coverage = 0 (0.000%)
+    Raw BCFtools variants    = 19
+    High quality variants    = 15
+
+[18] SE18 (4HDRNF_12_filtered.fastq)
+
+    Total reads              = 78236
+    Properly mapped reads    = 78236 (100.00%)
+    Total reference bases    = 4642499
+    Median base coverage     = 180
+    Mean base coverage       = 175.2
+    Bases with zero coverage = 0 (0.000%)
+    Bases with <=10 coverage = 0 (0.000%)
+    Raw BCFtools variants    = 17
+    High quality variants    = 11
+
+[19] SE19 (4HDRNF_14_filtered.fastq)
+
+    Total reads              = 50338
+    Properly mapped reads    = 50338 (100.00%)
+    Total reference bases    = 4642499
+    Median base coverage     = 122
+    Mean base coverage       = 120.4
+    Bases with zero coverage = 0 (0.000%)
+    Bases with <=10 coverage = 0 (0.000%)
+    Raw BCFtools variants    = 28
+    High quality variants    = 17
+
+[20] SE20 (4HDRNF_15_filtered.fastq)
+
+    Total reads              = 177725
+    Properly mapped reads    = 177725 (100.00%)
+    Total reference bases    = 4642499
+    Median base coverage     = 386
+    Mean base coverage       = 382.1
+    Bases with zero coverage = 0 (0.000%)
+    Bases with <=10 coverage = 0 (0.000%)
+    Raw BCFtools variants    = 9
+    High quality variants    = 8
+
+[21] SE21 (4HDRNF_13_filtered.fastq)
+
+    Total reads              = 94424
+    Properly mapped reads    = 94424 (100.00%)
+    Total reference bases    = 4642499
+    Median base coverage     = 218
+    Mean base coverage       = 211.0
+    Bases with zero coverage = 0 (0.000%)
+    Bases with <=10 coverage = 0 (0.000%)
+    Raw BCFtools variants    = 22
+    High quality variants    = 17
+

@@ -1,0 +1,40 @@
+##fileformat=VCFv4.2
+##FILTER=<ID=PASS,Description="All filters passed">
+##bcftoolsVersion=1.17+htslib-1.17
+##bcftoolsCommand=mpileup -Ou -f ref.fa aln.bam
+##reference=file://ref.fa
+##contig=<ID=562.163959.con.0001,length=4642499>
+##ALT=<ID=*,Description="Represents allele(s) other than observed.">
+##filter="QUAL > 10 & DP > 5"
+##INFO=<ID=INDEL,Number=0,Type=Flag,Description="Indicates that the variant is an INDEL.">
+##INFO=<ID=IDV,Number=1,Type=Integer,Description="Maximum number of raw reads supporting an indel">
+##INFO=<ID=IMF,Number=1,Type=Float,Description="Maximum fraction of raw reads supporting an indel">
+##INFO=<ID=DP,Number=1,Type=Integer,Description="Raw read depth">
+##INFO=<ID=VDB,Number=1,Type=Float,Description="Variant Distance Bias for filtering splice-site artefacts in RNA-seq data (bigger is better)",Version="3">
+##INFO=<ID=RPBZ,Number=1,Type=Float,Description="Mann-Whitney U-z test of Read Position Bias (closer to 0 is better)">
+##INFO=<ID=MQBZ,Number=1,Type=Float,Description="Mann-Whitney U-z test of Mapping Quality Bias (closer to 0 is better)">
+##INFO=<ID=BQBZ,Number=1,Type=Float,Description="Mann-Whitney U-z test of Base Quality Bias (closer to 0 is better)">
+##INFO=<ID=MQSBZ,Number=1,Type=Float,Description="Mann-Whitney U-z test of Mapping Quality vs Strand Bias (closer to 0 is better)">
+##INFO=<ID=SCBZ,Number=1,Type=Float,Description="Mann-Whitney U-z test of Soft-Clip Length Bias (closer to 0 is better)">
+##INFO=<ID=SGB,Number=1,Type=Float,Description="Segregation based metric, http://samtools.github.io/bcftools/rd-SegBias.pdf">
+##INFO=<ID=MQ0F,Number=1,Type=Float,Description="Fraction of MQ0 reads (smaller is better)">
+##FORMAT=<ID=PL,Number=G,Type=Integer,Description="List of Phred-scaled genotype likelihoods">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##INFO=<ID=AC,Number=A,Type=Integer,Description="Allele count in genotypes for each ALT allele, in the same order as listed">
+##INFO=<ID=AN,Number=1,Type=Integer,Description="Total number of alleles in called genotypes">
+##INFO=<ID=DP4,Number=4,Type=Integer,Description="Number of high-quality ref-forward , ref-reverse, alt-forward and alt-reverse bases">
+##INFO=<ID=MQ,Number=1,Type=Integer,Description="Average mapping quality">
+##bcftools_callVersion=1.17+htslib-1.17
+##bcftools_callCommand=call -Ov -mv mpileup; Date=Sun May 11 23:56:55 2025
+##SnpEffVersion="4.3t (build 2017-11-24 10:18), by Pablo Cingolani"
+##SnpEffCmd="SnpEff  -no-downstream -no-upstream -no-utr -o vcf 562.163959 var.vcf "
+##INFO=<ID=ANN,Number=.,Type=String,Description="Functional annotations: 'Allele | Annotation | Annotation_Impact | Gene_Name | Gene_ID | Feature_Type | Feature_ID | Transcript_BioType | Rank | HGVS.c | HGVS.p | cDNA.pos / cDNA.length | CDS.pos / CDS.length | AA.pos / AA.length | Distance | ERRORS / WARNINGS / INFO' ">
+##INFO=<ID=LOF,Number=.,Type=String,Description="Predicted loss of function effects for this variant. Format: 'Gene_Name | Gene_ID | Number_of_transcripts_in_gene | Percent_of_transcripts_affected'">
+##INFO=<ID=NMD,Number=.,Type=String,Description="Predicted nonsense mediated decay effects for this variant. Format: 'Gene_Name | Gene_ID | Number_of_transcripts_in_gene | Percent_of_transcripts_affected'">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	aln.bam
+562.163959.con.0001	629286	.	GAAAA	GAA	18.4773	.	AC=2;AN=2;BQBZ=-1.37356;DP=162;DP4=73,58,10,18;IDV=31;IMF=0.191358;MQ=60;MQ0F=0;MQBZ=0;MQSBZ=0;RPBZ=-0.417352;SCBZ=-0.982022;SGB=-0.693054;VDB=0.719782;INDEL;ANN=GAA|intergenic_region|MODIFIER|PATRIC:fig|562.163959.peg.615-PATRIC:fig|562.163959.peg.616|PATRIC:fig|562.163959.peg.615-PATRIC:fig|562.163959.peg.616|intergenic_region|PATRIC:fig|562.163959.peg.615-PATRIC:fig|562.163959.peg.616|||n.629289_629290delAA||||||	GT:PL	1/1:78,181,33
+562.163959.con.0001	966020	.	AGGGGGGGGG	AGGGGGGGG	49.5285	.	AC=1;AN=2;BQBZ=-1.61091;DP=86;DP4=21,14,19,22;IDV=51;IMF=0.593023;MQ=60;MQ0F=0;MQBZ=0;MQSBZ=0;RPBZ=1.18702;SCBZ=1.17843;SGB=-0.693145;VDB=0.660426;INDEL;ANN=AGGGGGGGG|intergenic_region|MODIFIER|PATRIC:fig|562.163959.peg.938-PATRIC:fig|562.163959.peg.939|PATRIC:fig|562.163959.peg.938-PATRIC:fig|562.163959.peg.939|intergenic_region|PATRIC:fig|562.163959.peg.938-PATRIC:fig|562.163959.peg.939|||n.966029delG||||||	GT:PL	0/1:94,12,79
+562.163959.con.0001	2220068	.	G	C	123.641	.	AC=1;AN=2;BQBZ=-0.467355;DP=104;DP4=42,45,8,9;MQ=58;MQ0F=0;MQBZ=-2.69147;MQSBZ=0.561624;RPBZ=-6.50095;SCBZ=1.35151;SGB=-0.690438;VDB=2.76976e-11;ANN=C|missense_variant|MODERATE|PATRIC:fig|562.163959.peg.2191|PATRIC:fig|562.163959.peg.2191|transcript|PATRIC:fig|562.163959.peg.2191|protein_coding|1/1|c.37G>C|p.Val13Leu|37/378|37/378|13/125||	GT:PL	0/1:159,0,255
+562.163959.con.0001	2324738	.	GAAAAAAAA	GAAAAAA,GAAAAA	14.8262	.	AC=1,1;AN=2;BQBZ=-1.72187;DP=155;DP4=82,21,1,46;IDV=52;IMF=0.335484;MQ=60;MQ0F=0;MQBZ=0;MQSBZ=0;RPBZ=2.10555;SCBZ=-0.0113395;SGB=-0.693147;VDB=0.668774;INDEL;ANN=GAAAAA|intergenic_region|MODIFIER|PATRIC:fig|562.163959.peg.2306-PATRIC:fig|562.163959.peg.2307|PATRIC:fig|562.163959.peg.2306-PATRIC:fig|562.163959.peg.2307|intergenic_region|PATRIC:fig|562.163959.peg.2306-PATRIC:fig|562.163959.peg.2307|||n.2324744_2324746delAAA||||||,GAAAAAA|intergenic_region|MODIFIER|PATRIC:fig|562.163959.peg.2306-PATRIC:fig|562.163959.peg.2307|PATRIC:fig|562.163959.peg.2306-PATRIC:fig|562.163959.peg.2307|intergenic_region|PATRIC:fig|562.163959.peg.2306-PATRIC:fig|562.163959.peg.2307|||n.2324745_2324746delAA||||||	GT:PL	1/2:77,130,48,241,0,72
+562.163959.con.0001	3108303	.	TCCCCCCC	TCCCCC,TCCCCCC	89.9736	.	AC=1,1;AN=2;BQBZ=-1.71918;DP=132;DP4=19,54,33,24;IDV=59;IMF=0.44697;MQ=60;MQ0F=0;MQBZ=0;MQSBZ=0;RPBZ=-2.20414;SCBZ=-0.0471394;SGB=-0.693147;VDB=0.436501;INDEL;ANN=TCCCCC|intergenic_region|MODIFIER|PATRIC:fig|562.163959.peg.3050-PATRIC:fig|562.163959.peg.3051|PATRIC:fig|562.163959.peg.3050-PATRIC:fig|562.163959.peg.3051|intergenic_region|PATRIC:fig|562.163959.peg.3050-PATRIC:fig|562.163959.peg.3051|||n.3108309_3108310delCC||||||,TCCCCCC|intergenic_region|MODIFIER|PATRIC:fig|562.163959.peg.3050-PATRIC:fig|562.163959.peg.3051|PATRIC:fig|562.163959.peg.3050-PATRIC:fig|562.163959.peg.3051|intergenic_region|PATRIC:fig|562.163959.peg.3050-PATRIC:fig|562.163959.peg.3051|||n.3108310delC||||||	GT:PL	1/2:151,55,57,133,0,156
+562.163959.con.0001	3201500	.	G	GA	228.419	.	AC=2;AN=2;BQBZ=-2.72765;DP=245;DP4=1,3,123,116;IDV=241;IMF=0.983673;MQ=59;MQ0F=0;MQBZ=-0.128831;MQSBZ=-1.01232;RPBZ=-0.220546;SCBZ=0.182568;SGB=-0.693147;VDB=0.592965;INDEL;ANN=GA|intergenic_region|MODIFIER|PATRIC:fig|562.163959.peg.3159-PATRIC:fig|562.163959.peg.3160|PATRIC:fig|562.163959.peg.3159-PATRIC:fig|562.163959.peg.3160|intergenic_region|PATRIC:fig|562.163959.peg.3159-PATRIC:fig|562.163959.peg.3160|||n.3201500_3201501insA||||||	GT:PL	1/1:255,255,0

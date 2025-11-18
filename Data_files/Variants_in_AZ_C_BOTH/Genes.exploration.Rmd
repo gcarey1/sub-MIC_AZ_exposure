@@ -1,0 +1,1160 @@
+---
+title: "Coding_ranges"
+author: "Grace Carey"
+date: "2025-05-13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(GenomicRanges)
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+```
+
+First read in your annotated reference genome and the variants you are interested in. 
+Make sure your files are quality filtered and ready to go. 
+
+```{r, get files ready and quality filter}
+
+annotat <- read.csv("MG1655_flye_annotation.csv") #this file contains the annotation for the MG1655 reference strain assembled/annotated genome
+variants_df1 <- read.csv("combined_variations.csv")
+
+# head(annotat)
+
+variants_df <- dplyr::filter(variants_df1, Score >= 20)
+
+cds_data <- annotat[annotat$type == "CDS", ]
+names(cds_data)[names(cds_data) == "function."] <- "region_function"
+
+```
+
+Then use GenomicRanges to find where coding ranges (CDS) are found in the reference genome. 
+
+```{r, find CDS ranges}
+# Ensure start is always less than or equal to stop
+cds_data$start_fixed <- pmin(cds_data$start, cds_data$stop)
+cds_data$stop_fixed <- pmax(cds_data$start, cds_data$stop)
+
+
+library(GenomicRanges)
+
+cds_gr <- GRanges(
+  seqnames = cds_data$contig_id,
+  ranges = IRanges(start = cds_data$start_fixed, end = cds_data$stop_fixed),
+  strand = cds_data$strand
+)
+
+mcols(cds_gr)$feature_id <- cds_data$feature_id
+mcols(cds_gr)$region_function <- cds_data$region_function
+
+```
+
+Next find which variants of interest exist within a coding region (CDS). 
+
+```{r, find which variants are in cds}
+
+library(GenomicRanges)
+
+variants_gr <- GRanges(
+  seqnames = variants_df$Contig,
+  ranges = IRanges(start = variants_df$Pos, width = 1)
+)
+# unique(seqnames(variants_gr)) #use this to check what the contig name is for the variants data
+
+# Rename contig name in cds_gr to match the variant contig name
+seqlevels(cds_gr) <- "562.163959.con.0001"
+
+hits <- findOverlaps(variants_gr, cds_gr) #which variants are in a CDS?
+
+# Extract overlapping variants from variants_df
+variants_in_cds <- variants_df[queryHits(hits), ] #get the variants in CDS
+
+# Extract CDS metadata (e.g., feature_id, region_function)
+cds_hits <- cds_gr[subjectHits(hits)]
+cds_meta <- as.data.frame(mcols(cds_hits))
+
+# Combine both
+variants_in_cds$feature_id <- cds_meta$feature_id
+variants_in_cds$region_function <- cds_meta$region_function #now you have the desired variants
+
+
+# write.csv(variants_in_cds, "variants_in_CDS.csv", row.names = FALSE) #can write to csv if needed. 
+
+```
+
+And finally find which variants exist within 500 basepairs (upstream or downstream) of a coding region. 
+
+```{r, variants within 500bp of CDS}
+
+# Expand CDS ranges by 500bp on either side
+cds_gr_expanded <- resize(cds_gr, width = width(cds_gr) + 1000, fix = "center")
+
+# Find overlaps between variants and the expanded CDS ranges
+hits_expanded <- findOverlaps(variants_gr, cds_gr_expanded)
+
+# Extract overlapping variants
+variants_near_cds <- variants_df[queryHits(hits_expanded), ] # get the variants near CDS
+
+# Extract expanded CDS metadata
+cds_hits_expanded <- cds_gr_expanded[subjectHits(hits_expanded)]
+cds_meta_expanded <- as.data.frame(mcols(cds_hits_expanded))
+
+# Combine both
+variants_near_cds$feature_id <- cds_meta_expanded$feature_id
+variants_near_cds$region_function <- cds_meta_expanded$region_function # variants near CDS regions
+
+# Optionally, save to a CSV
+# write.csv(variants_near_cds, "variants_near_CDS.csv", row.names = FALSE)
+
+# Split Var column by comma and expand the rows accordingly
+variants_df_split <- variants_near_cds %>%
+  separate_rows(Var, sep = ",")  # This will separate Var into individual rows
+
+# Check the result
+print(variants_df_split)
+```
+
+Now that we have the variants within 500bp of a coding region, I will see which (non-synonymous) ones are unique to AZ cultures, which are unique to control cultures, and which are common to both. Unique will be defined as:
+Unique in position AND sequence. Since multiple variants can occur at a single position. 
+
+
+```{r}
+library(dplyr)
+library(writexl)
+
+# Read the key file
+Key <- read.csv("SNPs_key.csv")
+
+# Merge with variants data
+merged_variants <- merge(variants_df_split, Key, by = "Library_name", all.x = TRUE)
+
+# Create Pos_var to uniquely identify variants
+merged_variants <- merged_variants %>%
+  mutate(Pos_var = paste(Pos, Var, sep = "_"))
+
+merged_variantsnonsyn <- filter(merged_variants, Type != "Synon")
+
+
+```
+
+```{r}
+
+#I am commenting this out so that it doesn't keep adding pipes to the feature_id column. This code does work, just uncomment when ready to use. 
+# blastresults <- read.csv("filteredblastinfo52125.csv") #these blast results are the result of blasting the unique variants against the nucleotide database to try and find more about what they actually are. After blasting they were quality filtered. These are the quality filtered blast results. 
+# 
+# merged_variantsnonsyn$feature_id <- paste0(merged_variantsnonsyn$feature_id, "|")
+# 
+# blastedvariants <- merge(blastresults, merged_variantsnonsyn,
+#                          by.x = "qseqid", by.y = "feature_id", all = TRUE)
+
+# write.csv(blastedvariants, "variantswithblastfiltered.csv")
+
+```
+
+
+```{r}
+
+blastedvariants <- read.csv("variantswithblastfiltered.csv")
+
+#in this dataframe, my own personal variant ids are in qseqid, and the feature IDs that BV BRC identified are in result.feature.id
+
+length(unique(blastedvariants$feature_id))
+length(unique(blastedvariants$qseqid))
+sum(is.na(blastedvariants$subclass))
+
+
+```
+
+```{r}
+
+
+
+
+library(ggplot2)
+library(dplyr)
+# Define the custom order of samples
+custom_order <- c("CN02_S07", "CN02_S04", "CN02_S01", "CN01_S07", "CN01_S04", "CN01_S01",
+"AZ05_S07", "AZ05_S04", "AZ05_S01", "AZ04_S07", "AZ04_S04", "AZ04_S01",
+"AZ03_S07", "AZ03_S04", "AZ03_S01", "AZ02_S07", "AZ02_S04", "AZ02_S01",
+"AZ01_S07", "AZ01_S04", "AZ01_S01")
+
+library(dplyr)
+library(ggplot2)
+library(scales)
+
+# Step 1: Create P1 bins
+blastedvariants <- blastedvariants %>%
+  mutate(P1_bin = floor(Pos / 100000) * 100000)
+
+# Step 2: Count occurrences by sample and P1_bin
+heatmap_data <- blastedvariants %>%
+  group_by(Culture, Timepoint, Sample, P1_bin) %>%
+  summarise(count = n(), .groups = "drop")
+
+# Step 3: Keep sample factor order
+heatmap_data$Sample <- factor(heatmap_data$Sample, levels = custom_order)
+
+# Plot using summarized dataframe
+ggplot(heatmap_data, aes(x = P1_bin, y = Sample, fill = count)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient(low = "blue", high = "red") +
+  scale_x_continuous(
+    breaks = seq(0, 5000000, by = 1000000),
+    labels = scientific,
+    expand = c(0, 0)
+  ) +
+  labs(
+    x = expression("Count of variations at reference genome positions (binned by 10" ^ 5 * " bp)"),
+    y = "Sample",
+    fill = "Count",
+    title = expression("Count of variations at reference genome positions (binned by 10" ^ 5 * " bp)")
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.y = element_text(size = 8),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  ) +
+  geom_hline(yintercept = 0.5:25, color = "grey90", linetype = "solid") + 
+  geom_hline(yintercept = c(3.5, 6.5, 9.5, 12.5, 15.5, 18.5, 21.5), color = "black", linetype = "solid") +
+  geom_vline(xintercept = seq(50000, 4650000, by = 100000), color = "gray", linetype = "solid")
+
+# ggsave("variant_binned_map.png", width = 8, height = 6, dpi = 300)
+
+
+```
+
+
+```{r}
+
+custom_order <- c("CN02_S07", "CN02_S04", "CN02_S01", "CN01_S07", "CN01_S04", "CN01_S01",
+"AZ05_S07", "AZ05_S04", "AZ05_S01", "AZ04_S07", "AZ04_S04", "AZ04_S01",
+"AZ03_S07", "AZ03_S04", "AZ03_S01", "AZ02_S07", "AZ02_S04", "AZ02_S01",
+"AZ01_S07", "AZ01_S04", "AZ01_S01")
+
+
+blastedvariants$Sample <- factor(blastedvariants$Sample, levels = custom_order)
+ggplot(blastedvariants, aes(x = factor(Pos), y = Sample)) +
+  geom_point(aes(color = Type), size = 2, alpha = 0.7) +
+    scale_color_brewer(palette = "Dark2") +
+  labs(
+    title = "Variants by position and category",
+    x = "Reference Base Number",
+    y = "Sample",
+    color = "Variation Type"
+  ) +
+  theme_minimal() +
+  geom_hline(yintercept = 0.5:25, color = "grey90", linetype = "solid") + 
+  geom_hline(yintercept = c(3.5, 6.5, 9.5, 12.5, 15.5, 18.5, 21.5), color = "black", linetype = "solid") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 3))
+
+
+```
+
+```{r}
+custom_order <- c("AZ01_S01", "AZ01_S04", "AZ01_S07",
+                  "AZ02_S01", "AZ02_S04", "AZ02_S07",
+                  "AZ03_S01", "AZ03_S04", "AZ03_S07",
+                  "AZ04_S01", "AZ04_S04", "AZ04_S07",
+                  "AZ05_S01", "AZ05_S04", "AZ05_S07",
+                  "CN01_S01", "CN01_S04", "CN01_S07",
+                  "CN02_S01", "CN02_S04", "CN02_S07")
+
+
+
+blastedvariants$Sample <- factor(blastedvariants$Sample, levels = custom_order)
+ggplot(blastedvariants, aes(x = Sample, fill = Type)) +
+  geom_bar(position = "stack") +
+  scale_fill_brewer(palette = "Dark2") +
+  labs(
+    title = "Count of Variant Types per Sample",
+    x = "Sample",
+    y = "Count",
+    fill = "Variation Type"
+  ) +
+  theme_minimal() +
+  theme(panel.grid.major = element_blank()) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 9)) +
+    geom_vline(xintercept = c(0.5,3.5,6.5, 9.5, 12.5, 15.5, 18.5, 21.5), color = "black", linetype = "solid")
+
+# ggsave("variant_counts_bars.png", width = 8, height = 6, dpi = 300)
+
+
+```
+
+```{r}
+library(dplyr)
+library(ggplot2)
+
+# Count per Timepoint, Type, and Culture
+count_data <- blastedvariants %>%
+  group_by(Timepoint, Type, Culture) %>%
+  summarise(Count = n(), .groups = "drop")
+
+# Plot: Faceted by Type, lines connecting points by Culture and Type, point color by Culture
+ggplot(count_data, aes(x = Timepoint, y = Count, color = Culture, group = interaction(Culture, Type))) +
+  geom_point(size = 3) +
+  geom_line(aes(group = interaction(Culture, Type)), alpha = 0.7) +
+  scale_color_brewer(palette = "Dark2") +
+  labs(
+    title = "Variant Counts by Culture, Type, and Timepoint",
+    x = "Timepoint",
+    y = "Count",
+    color = "Culture"
+  ) +
+  theme_minimal() +
+  theme(
+    panel.grid.major = element_blank(),
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 9)
+  ) +
+  facet_wrap(~ Type) +  # Facet by Type
+  geom_vline(xintercept = unique(count_data$Timepoint), color = "black", linetype = "solid")
+
+
+```
+
+```{r}
+library(dplyr)
+library(ggplot2)
+
+# Count per Timepoint, Type, and Culture
+count_data <- blastedvariants %>%
+  group_by(Timepoint, Type, Evolution_conditions) %>%
+  summarise(Count = n(), .groups = "drop")
+
+# Add a new data point (Timepoint = S01, Type = Synon, Count = 0)
+new_point <- data.frame(
+  Timepoint = "S01", 
+  Type = "Synon", 
+  Evolution_conditions = "Azithromycin", # Replace with the actual condition if necessary
+  Count = 0
+)
+
+# Add a new data point (Timepoint = S01, Type = Synon, Count = 0)
+new_point1 <- data.frame(
+  Timepoint = "S01", 
+  Type = "Synon", 
+  Evolution_conditions = "NoAzithromycin", # Replace with the actual condition if necessary
+  Count = 0
+)
+# Add a new data point (Timepoint = S01, Type = Synon, Count = 0)
+new_point2 <- data.frame(
+  Timepoint = "S04", 
+  Type = "Synon", 
+  Evolution_conditions = "NoAzithromycin", # Replace with the actual condition if necessary
+  Count = 0
+)
+# Add a new data point (Timepoint = S01, Type = Synon, Count = 0)
+new_point3 <- data.frame(
+  Timepoint = "S07", 
+  Type = "Synon", 
+  Evolution_conditions = "NoAzithromycin", # Replace with the actual condition if necessary
+  Count = 0
+)
+
+# Combine the new point with the existing count_data
+count_data <- rbind(count_data, new_point, new_point1, new_point2, new_point3)
+
+# Plot: Faceted by Evolution_conditions, lines connecting points by Evolution_conditions and Type, point color by Type
+ggplot(count_data, aes(x = Timepoint, y = Count, shape = Evolution_conditions, color = Type, group = interaction(Evolution_conditions, Type))) +
+  geom_point(size = 3) +
+  geom_line(aes(group = interaction(Evolution_conditions, Type)), alpha = 0.7) +
+  scale_color_brewer(palette = "Dark2") +
+  facet_grid(. ~ Evolution_conditions) +
+  labs(
+    title = "Variant Counts by Culture, Type, and Timepoint",
+    x = "Timepoint",
+    y = "Count",
+    color = "Type"
+  ) +
+  theme_minimal() +
+  theme(
+    panel.grid.major = element_blank(),
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 9)
+  )
+
+```
+
+```{r}
+library(ggplot2)
+
+# Custom order for Sample factor levels
+custom_order <- c("CN02_S07", "CN02_S04", "CN02_S01", "CN01_S07", "CN01_S04", "CN01_S01",
+                  "AZ05_S07", "AZ05_S04", "AZ05_S01", "AZ04_S07", "AZ04_S04", "AZ04_S01",
+                  "AZ03_S07", "AZ03_S04", "AZ03_S01", "AZ02_S07", "AZ02_S04", "AZ02_S01",
+                  "AZ01_S07", "AZ01_S04", "AZ01_S01")
+
+# Ensure Sample is a factor with the custom order
+blastedvariants$Sample <- factor(blastedvariants$Sample, levels = custom_order)
+
+# Plot with color gradient for Var_frac and shape for Type
+ggplot(blastedvariants, aes(x = factor(Pos), y = Sample)) +
+  geom_point(aes(color = Var_frac, shape = Type), size = 2, alpha = 0.7) +
+  scale_color_gradient(low = "blue", high = "red") +  # Color gradient from blue to red
+  scale_shape_manual(values = 1:10) +  # Optional: Adjust number of shapes for each Type
+  labs(
+    title = "Variants by Position and Category",
+    x = "Reference Base Number",
+    y = "Sample",
+    color = "Variant Fraction",
+    shape = "Variation Type"
+  ) +
+  theme_minimal() +
+  geom_hline(yintercept = 0.5:25, color = "grey90", linetype = "solid") + 
+  geom_hline(yintercept = c(3.5, 6.5, 9.5, 12.5, 15.5, 18.5, 21.5), color = "black", linetype = "solid") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 3))
+
+```
+
+```{r}
+# Plot with color gradient for Var_frac and shape for Type
+ggplot(blastedvariants, aes(x = factor(Pos), y = Sample)) +
+  geom_point(aes(color = Var_frac), size = 2, alpha = 0.7) +  # Use Var_frac for color
+  scale_color_gradient(low = "blue", high = "red") +  # Color gradient from blue to red
+  labs(
+    title = "Variants by Position and Sample",
+    x = expression("Reference Genome Position (binned by 10" ^ 5 * " bp)"),
+    y = "Sample",
+    color = "Variant Fraction"
+  ) +
+  theme_minimal() +
+  geom_hline(yintercept = 0.5:25, color = "grey90", linetype = "solid") + 
+  geom_hline(yintercept = c(3.5, 6.5, 9.5, 12.5, 15.5, 18.5, 21.5), color = "black", linetype = "solid") +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, size = 3),  # Rotate x-axis labels
+    axis.text.y = element_text(size = 8)
+  ) +
+  scale_x_discrete(breaks = unique(blastedvariants$Pos))  # Display only bins with data
+
+
+```
+
+```{r}
+
+# Plot with color gradient for Var_frac as a heatmap
+ggplot(blastedvariants, aes(x = factor(Pos), y = Sample)) +
+  geom_tile(aes(fill = Var_frac), color = "white") +  # Use Var_frac for fill in a heatmap
+  scale_fill_gradient(low = "blue", high = "red") +  # Color gradient from blue to red
+  labs(
+    title = "Variant Fractions (Heatmap)",
+    x = "Reference Base Number",
+    y = "Sample",
+    fill = "Variant Fraction"
+  ) +
+  theme_minimal() +
+  geom_hline(yintercept = 0.5:25, color = "grey90", linetype = "solid") + 
+  geom_hline(yintercept = c(3.5, 6.5, 9.5, 12.5, 15.5, 18.5, 21.5), color = "black", linetype = "solid") +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, size = 3),  # Rotate x-axis labels for better readability
+    axis.text.y = element_text(size = 10)
+  ) +
+  scale_x_discrete(breaks = unique(blastedvariants$Pos))  # Display only positions with data
+
+# ggsave("variant_frac_map.png", width = 8, height = 6, dpi = 300)
+
+
+```
+
+```{r}
+
+# Plot with categorical color palette for Var_frac as a heatmap
+ggplot(blastedvariants, aes(x = factor(Pos), y = Sample)) +
+  geom_tile(aes(fill = Type), color = "white") +  # Use Type for fill in a heatmap
+  scale_fill_brewer(palette = "Dark2") +  # Apply categorical color palette for Type
+    # scale_fill_brewer(palette = "Accent") +  # Apply categorical color palette for Type
+  labs(
+    title = "Variants by Position and Type",
+    x = "Reference Base Number",
+    y = "Sample",
+    fill = "Variation Type"
+  ) +
+  theme_minimal() +
+  geom_hline(yintercept = 0.5:25, color = "grey90", linetype = "solid") + 
+  geom_hline(yintercept = c(3.5, 6.5, 9.5, 12.5, 15.5, 18.5, 21.5), color = "black", linetype = "solid") +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, size = 3),  # Rotate x-axis labels for better readability
+    axis.text.y = element_text(size = 10)
+  ) +
+  scale_x_discrete(breaks = unique(blastedvariants$Pos))  # Display only positions with data
+
+# ggsave("variant_types_map.png", width = 8, height = 6, dpi = 300)
+
+```
+
+
+```{r}
+
+# Plot with color gradient for Var_frac as a heatmap
+ggplot(blastedvariants, aes(x = factor(Pos), y = Sample)) +
+  geom_tile(aes(fill = Mean_base_coverage), color = "white") +  # Use Var_frac for fill in a heatmap
+  scale_fill_gradient(low = "blue", high = "red") +  # Color gradient from blue to red
+  labs(
+    title = "Coverage at Variant Positions (Heatmap)",
+    x = "Reference Base Number",
+    y = "Sample",
+    fill = "Coverage"
+  ) +
+  theme_minimal() +
+  geom_hline(yintercept = 0.5:25, color = "grey90", linetype = "solid") + 
+  geom_hline(yintercept = c(3.5, 6.5, 9.5, 12.5, 15.5, 18.5, 21.5), color = "black", linetype = "solid") +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, size = 3),  # Rotate x-axis labels for better readability
+    axis.text.y = element_text(size = 10)
+  ) +
+  scale_x_discrete(breaks = unique(blastedvariants$Pos))  # Display only positions with data
+
+# ggsave("variant_coverage_map.png", width = 8, height = 6, dpi = 300)
+
+
+
+
+```
+
+```{r}
+
+# Plot with color gradient for Var_frac as a heatmap
+ggplot(blastedvariants, aes(x = factor(Pos), y = Sample)) +
+  geom_tile(aes(fill = Score), color = "white") +  # Use Var_frac for fill in a heatmap
+  scale_fill_gradient(low = "blue", high = "red") +  # Color gradient from blue to red
+  labs(
+    title = "Variant quality score (Heatmap)",
+    x = "Reference Base Number",
+    y = "Sample",
+    fill = "Quality score"
+  ) +
+  theme_minimal() +
+  geom_hline(yintercept = 0.5:25, color = "grey90", linetype = "solid") + 
+  geom_hline(yintercept = c(3.5, 6.5, 9.5, 12.5, 15.5, 18.5, 21.5), color = "black", linetype = "solid") +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, size = 3),  # Rotate x-axis labels for better readability
+    axis.text.y = element_text(size = 10)
+  ) +
+  scale_x_discrete(breaks = unique(blastedvariants$Pos))  # Display only positions with data
+
+# ggsave("variant_frac_map.png", width = 8, height = 6, dpi = 300)
+
+
+
+
+```
+Now let's see where the Rhsa and b are: 
+
+
+
+```{r}
+rhs_subset <- datakeyfiltered[blastedvariants$region_function %in% c("Protein RhsA", "Protein RhsB"), ]
+
+library(ggplot2)
+
+# Add a logical column for highlighting
+blastedvariants$highlight_rhsA <- blastedvariants$Function == "Protein RhsA"
+
+library(ggplot2)
+
+# Create a new column for highlighting category
+blastedvariants$highlight_group <- ifelse(blastedvariants$Function == "Protein RhsA", "RhsA",
+                                   ifelse(blastedvariants$Function == "Protein RhsB", "RhsB", NA))
+
+ggplot(blastedvariants, aes(x = factor(Pos), y = Sample)) +
+  # Base heatmap fill by variant Type
+  geom_tile(aes(fill = Type), color = "white") +
+
+  # Red border for RhsA
+  geom_tile(
+    data = subset(blastedvariants, highlight_group == "RhsA"),
+    aes(x = factor(Pos), y = Sample),
+    color = "hotpink", size = 2, fill = NA
+  ) +
+
+  # Blue border for RhsB
+  geom_tile(
+    data = subset(blastedvariants, highlight_group == "RhsB"),
+    aes(x = factor(Pos), y = Sample),
+    color = "yellow", size = 2, fill = NA
+  ) +
+
+  scale_fill_brewer(palette = "Dark2") +
+  labs(
+    title = "Variants by Position and Type",
+    x = "Reference Base Number",
+    y = "Sample",
+    fill = "Variation Type"
+  ) +
+  theme_minimal() +
+  geom_hline(yintercept = 0.5:25, color = "grey90", linetype = "solid") +
+  geom_hline(yintercept = c(3.5, 6.5, 9.5, 12.5, 15.5, 18.5, 21.5), color = "black", linetype = "solid") +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, size = 3),
+    axis.text.y = element_text(size = 10)
+  ) +
+  scale_x_discrete(breaks = unique(blastedvariants$Pos))
+
+
+# ggsave("variant_highlightrhsa_map.png", width = 8, height = 6, dpi = 300)
+
+```
+
+
+
+```{r}
+
+library(dplyr)
+sum(is.na(blastedvariants$Gene.Symbol) | blastedvariants$Gene.Symbol == "")
+
+# Step 1: Create a table of unique Gene.Symbol and Evolution_conditions pairs
+gene_conditions <- blastedvariants %>%
+  select(Gene.Symbol, Evolution_conditions) %>%
+  distinct()
+
+# Step 2: Create vectors for each condition
+genes_azithro <- gene_conditions %>%
+  filter(Evolution_conditions == "Azithromycin") %>%
+  pull(Gene.Symbol)
+
+genes_noazithro <- gene_conditions %>%
+  filter(Evolution_conditions == "NoAzithromycin") %>%
+  pull(Gene.Symbol)
+
+# Step 3: Compare
+only_azithro <- setdiff(genes_azithro, genes_noazithro)
+only_noazithro <- setdiff(genes_noazithro, genes_azithro)
+shared_genes <- intersect(genes_azithro, genes_noazithro)
+
+# Step 4: Optionally, wrap in a list for clarity
+gene_lists <- list(
+  Only_in_Azithromycin = only_azithro,
+  Only_in_NoAzithromycin = only_noazithro,
+  Present_in_Both = shared_genes
+)
+
+# Print result
+gene_lists
+
+only_azithro_df <- as.data.frame(only_azithro)
+only_noazithro_df <- as.data.frame(only_noazithro)
+shared_genes_df <- as.data.frame(shared_genes)
+
+library(openxlsx)
+
+# Create a new workbook
+wb <- createWorkbook()
+
+# Add sheets and write data frames
+addWorksheet(wb, "Only_Azithro")
+writeData(wb, "Only_Azithro", only_azithro_df)
+
+addWorksheet(wb, "Only_NoAzithro")
+writeData(wb, "Only_NoAzithro", only_noazithro_df)
+
+addWorksheet(wb, "Shared_Genes")
+writeData(wb, "Shared_Genes", shared_genes_df)
+
+# Save workbook to file
+saveWorkbook(wb, file = "genes_location_summary.xlsx", overwrite = TRUE)
+
+
+```
+
+```{r}
+library(dplyr)
+
+blastedvariants <- blastedvariants %>%
+  filter(!is.na(Gene.Symbol) & Gene.Symbol != "")
+
+
+# Variants only found in NoAzithromycin
+Variants_Control <- blastedvariants %>%
+  filter(Gene.Symbol %in% only_noazithro & Evolution_conditions == "NoAzithromycin")
+
+# Variants only found in Azithromycin
+Variants_Azithro <- blastedvariants %>%
+  filter(Gene.Symbol %in% only_azithro & Evolution_conditions == "Azithromycin")
+
+# Variants shared between both conditions
+Variants_Overlap <- blastedvariants %>%
+  filter(Gene.Symbol %in% shared_genes & Evolution_conditions %in% c("Azithromycin", "NoAzithromycin"))
+
+
+```
+
+```{r}
+
+# Plot with categorical color palette for Var_frac as a heatmap
+ggplot(blastedvariants, aes(x = Gene.Symbol, y = Sample)) +
+  geom_tile(aes(fill = Type), color = "white") +  # Use Type for fill in a heatmap
+  scale_fill_brewer(palette = "Dark2") +  # Apply categorical color palette for Type
+    # scale_fill_brewer(palette = "Accent") +  # Apply categorical color palette for Type
+  labs(
+    title = "Genes with variants",
+    x = "Gene",
+    y = "Sample",
+    fill = "Variation Type"
+  ) +
+  theme_minimal() +
+  geom_hline(yintercept = 0.5:25, color = "grey90", linetype = "solid") + 
+  geom_hline(yintercept = c(3.5, 6.5, 9.5, 12.5, 15.5, 18.5, 21.5), color = "black", linetype = "solid") +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, size = 7),  # Rotate x-axis labels for better readability
+    axis.text.y = element_text(size = 10)
+  ) 
+
+# ggsave("variant_types_blasted_map.png", width = 10, height = 6, dpi = 300)
+
+```
+
+
+```{r}
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+
+# # Desired Y-axis categories
+# desired_samples <- c(
+#   "CN02_S07", "CN02_S04", "CN02_S01", "CN01_S07", "CN01_S04", "CN01_S01",
+#   "AZ05_S07", "AZ05_S04", "AZ05_S01", "AZ04_S07", "AZ04_S04", "AZ04_S01",
+#   "AZ03_S07", "AZ03_S04", "AZ03_S01", "AZ02_S07", "AZ02_S04", "AZ02_S01",
+#   "AZ01_S07", "AZ01_S04", "AZ01_S01"
+# )
+
+desired_samples <- c("AZ05_S07", "AZ05_S04", "AZ05_S01", "AZ04_S07", "AZ04_S04", "AZ04_S01",
+  "AZ03_S07", "AZ03_S04", "AZ03_S01", "AZ02_S07", "AZ02_S04", "AZ02_S01",
+  "AZ01_S07", "AZ01_S04", "AZ01_S01"
+)
+
+# Ensure Gene.Symbol is a factor (or character)
+Variants_Azithro$Gene.Symbol <- as.character(Variants_Azithro$Gene.Symbol)
+
+# Expand the dataframe to include all combinations of Gene.Symbol and desired_samples
+Variants_Azithro_complete <- Variants_Azithro %>%
+  complete(Sample = desired_samples, Gene.Symbol, fill = list(Type = NA))
+
+# Set Sample as an ordered factor for y-axis
+Variants_Azithro_complete$Sample <- factor(Variants_Azithro_complete$Sample, levels = desired_samples)
+
+# Plot
+ggplot(Variants_Azithro_complete, aes(x = Gene.Symbol, y = Sample)) +
+  geom_tile(aes(fill = Type), color = "white", na.rm = FALSE) +
+scale_fill_brewer(palette = "Dark2", na.value = "#00000000", na.translate = FALSE) +
+  labs(
+    title = "Genes with variants: unique to azithromycin samples",
+    x = "Gene",
+    y = "Sample",
+    fill = "Variation Type"
+  ) +
+  theme_minimal() +
+  geom_hline(yintercept = 0.5:25, color = "grey90", linetype = "solid") + 
+  geom_hline(yintercept = c(3.5, 6.5, 9.5, 12.5, 15.5, 18.5, 21.5), color = "black", linetype = "solid") +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, size = 7),  # Rotate x-axis labels for better readability
+    axis.text.y = element_text(size = 10)
+  ) 
+
+# ggsave("variant_types_blastedAZ_map.png", width = 10, height = 6, dpi = 300)
+
+```
+
+
+```{r}
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+
+# # Desired Y-axis categories
+# desired_samples <- c(
+#   "CN02_S07", "CN02_S04", "CN02_S01", "CN01_S07", "CN01_S04", "CN01_S01",
+#   "AZ05_S07", "AZ05_S04", "AZ05_S01", "AZ04_S07", "AZ04_S04", "AZ04_S01",
+#   "AZ03_S07", "AZ03_S04", "AZ03_S01", "AZ02_S07", "AZ02_S04", "AZ02_S01",
+#   "AZ01_S07", "AZ01_S04", "AZ01_S01"
+# )
+
+desired_samples <- c(
+  "CN02_S07", "CN02_S04", "CN02_S01", "CN01_S07", "CN01_S04", "CN01_S01")
+
+# Ensure Gene.Symbol is a factor (or character)
+Variants_Control$Gene.Symbol <- as.character(Variants_Control$Gene.Symbol)
+
+# Expand the dataframe to include all combinations of Gene.Symbol and desired_samples
+Variants_Control_complete <- Variants_Control %>%
+  complete(Sample = desired_samples, Gene.Symbol, fill = list(Type = NA))
+
+# Set Sample as an ordered factor for y-axis
+Variants_Control_complete$Sample <- factor(Variants_Control_complete$Sample, levels = desired_samples)
+
+# Plot
+ggplot(Variants_Control_complete, aes(x = Gene.Symbol, y = Sample)) +
+  geom_tile(aes(fill = Type), color = "white", na.rm = FALSE) +
+scale_fill_brewer(palette = "Dark2", na.value = "#00000000", na.translate = FALSE) +
+  labs(
+    title = "Genes with variants: unique to control samples",
+    x = "Gene",
+    y = "Sample",
+    fill = "Variation Type"
+  ) +
+  theme_minimal() +
+  geom_hline(yintercept = 0.5:25, color = "grey90", linetype = "solid") + 
+  geom_hline(yintercept = c(3.5, 6.5, 9.5, 12.5, 15.5, 18.5, 21.5), color = "black", linetype = "solid") +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, size = 7),  # Rotate x-axis labels for better readability
+    axis.text.y = element_text(size = 10)
+  ) 
+
+# ggsave("variant_types_blastedCN_map.png", width = 10, height = 4, dpi = 300)
+
+```
+
+```{r}
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+
+# # Desired Y-axis categories
+desired_samples <- c(
+  "CN02_S07", "CN02_S04", "CN02_S01", "CN01_S07", "CN01_S04", "CN01_S01",
+  "AZ05_S07", "AZ05_S04", "AZ05_S01", "AZ04_S07", "AZ04_S04", "AZ04_S01",
+  "AZ03_S07", "AZ03_S04", "AZ03_S01", "AZ02_S07", "AZ02_S04", "AZ02_S01",
+  "AZ01_S07", "AZ01_S04", "AZ01_S01"
+)
+
+
+# Ensure Gene.Symbol is a factor (or character)
+Variants_Overlap$Gene.Symbol <- as.character(Variants_Overlap$Gene.Symbol)
+
+# Expand the dataframe to include all combinations of Gene.Symbol and desired_samples
+Variants_Overlap_complete <- Variants_Overlap %>%
+  complete(Sample = desired_samples, Gene.Symbol, fill = list(Type = NA))
+
+# Set Sample as an ordered factor for y-axis
+Variants_Overlap_complete$Sample <- factor(Variants_Overlap_complete$Sample, levels = desired_samples)
+
+# Plot
+ggplot(Variants_Overlap_complete, aes(x = Gene.Symbol, y = Sample)) +
+  geom_tile(aes(fill = Type), color = "white", na.rm = FALSE) +
+scale_fill_brewer(palette = "Dark2", na.value = "#00000000", na.translate = FALSE) +
+  labs(
+    title = "Genes with variants: present in both AZ and control samples",
+    x = "Gene",
+    y = "Sample",
+    fill = "Variation Type"
+  ) +
+  theme_minimal() +
+  geom_hline(yintercept = 0.5:25, color = "grey90", linetype = "solid") + 
+  geom_hline(yintercept = c(3.5, 6.5, 9.5, 12.5, 15.5, 18.5, 21.5), color = "black", linetype = "solid") +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, size = 7),  # Rotate x-axis labels for better readability
+    axis.text.y = element_text(size = 10)
+  ) 
+
+# ggsave("variant_types_blastedOVERLAP_map.png", width = 10, height = 6, dpi = 300)
+
+```
+
+
+Now let's try to look at systems and subsystems
+
+```{r}
+
+c25 <- c(
+  "dodgerblue2", "#E31A1C", # red
+  "yellow4",
+  "#6A3D9A", # purple
+  "#FF7F00", # orange
+  "#FDBF6F", "red",
+  "skyblue2", "#FB9A99", # lt pink
+  "palegreen2",
+  "brown", # lt purple
+  "gray70", # lt orange
+  "black", "orange",
+  "maroon", "orchid1", "deeppink1", "blue1", "steelblue4",
+  "darkturquoise", "green1", "green4", "yellow3",
+  "darkorange4", "gray90"
+)
+# pie(rep(1, 25), col = c25)
+blastedvariants$subclass[blastedvariants$subclass == ""] <- NA
+
+# Plot with categorical color palette for Var_frac as a heatmap
+ggplot(blastedvariants, aes(x = Gene.Symbol, y = Sample)) +
+  geom_tile(aes(fill = subclass), color = "white") +  # Use Type for fill in a heatmap
+  scale_fill_manual(values = c25) +  # Use the custom palette here
+    # scale_fill_brewer(palette = "Accent") +  # Apply categorical color palette for Type
+  labs(
+    title = "Genes with variants",
+    x = "Gene",
+    y = "Sample",
+    fill = "Variation Type"
+  ) +
+  theme_minimal() +
+  geom_hline(yintercept = 0.5:25, color = "grey90", linetype = "solid") + 
+  geom_hline(yintercept = c(3.5, 6.5, 9.5, 12.5, 15.5, 18.5, 21.5), color = "black", linetype = "solid") +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, size = 7),  # Rotate x-axis labels for better readability
+    axis.text.y = element_text(size = 10)
+  ) 
+
+# ggsave("variant_subclass_blasted_map.png", width = 14, height = 6, dpi = 300)
+
+```
+
+```{r}
+library(dplyr)
+library(ggplot2)
+
+# Your desired samples and their order
+# desired_samples <- c("CN01_S01", "CN01_S04", "CN01_S07", "CN02_S01", "CN02_S04", "CN02_S07")
+desired_samples <- c(   "CN02_S07", "CN02_S04", "CN02_S01","CN01_S07","CN01_S04","CN01_S01")
+
+# Clean subclass column
+Variants_Control$subclass[Variants_Control$subclass == ""] <- NA
+Variants_Control$Gene.Symbol <- as.character(Variants_Control$Gene.Symbol)
+
+# Find missing samples
+existing_samples <- unique(Variants_Control$Sample)
+missing_samples <- setdiff(desired_samples, existing_samples)
+
+# Create dummy rows for missing samples to show on y-axis, with a placeholder gene that won't show on x-axis
+dummy_rows <- data.frame(
+  Sample = missing_samples,
+  Gene.Symbol = NA_character_,  # NA so no tile on x axis
+  subclass = NA_character_,
+  stringsAsFactors = FALSE
+)
+
+# Combine real and dummy rows
+Variants_Control_filled <- bind_rows(Variants_Control, dummy_rows)
+
+# Set factor levels for y axis (Samples)
+Variants_Control_filled$Sample <- factor(Variants_Control_filled$Sample, levels = desired_samples)
+
+# Set factor levels for x axis (Genes) if needed (optional)
+# Variants_Control_filled$Gene.Symbol <- factor(Variants_Control_filled$Gene.Symbol)
+
+ggplot(Variants_Control_filled, aes(x = Gene.Symbol, y = Sample)) +
+  geom_tile(aes(fill = subclass), color = "white", na.rm = FALSE) +
+  scale_fill_manual(
+    values = c(
+      "Flagellum" = "#1f77b4",
+      "Arginine; urea cycle, creatine, polyamines" = "#ff7f0e",
+      "RNA processing and modification" = "#2ca02c",
+      "Aminoacyl-tRNA-synthetases" = "#d62728",
+      "Pyrimidines" = "#9467bd"
+    ),
+    na.value = "gray80"  # color for missing subclass tiles
+  ) +
+  labs(
+    title = "Genes with variants: unique to control samples",
+    x = "Gene",
+    y = "Sample",
+    fill = "Subclass"
+  ) +
+  theme_minimal() +
+  geom_hline(yintercept = 0.5:25, color = "grey90", linetype = "solid") + 
+  geom_hline(yintercept = c(3.5, 6.5, 9.5, 12.5, 15.5, 18.5, 21.5), color = "black", linetype = "solid") +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, size = 7),
+    axis.text.y = element_text(size = 10)
+  )
+
+
+# ggsave("variant_subclass_blastedCN_map.png", width = 10, height = 4, dpi = 300)
+
+```
+
+
+
+```{r}
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+
+# # Desired Y-axis categories
+desired_samples <- c(
+  "CN02_S07", "CN02_S04", "CN02_S01", "CN01_S07", "CN01_S04", "CN01_S01",
+  "AZ05_S07", "AZ05_S04", "AZ05_S01", "AZ04_S07", "AZ04_S04", "AZ04_S01",
+  "AZ03_S07", "AZ03_S04", "AZ03_S01", "AZ02_S07", "AZ02_S04", "AZ02_S01",
+  "AZ01_S07", "AZ01_S04", "AZ01_S01"
+)
+
+
+# Ensure Gene.Symbol is a factor (or character)
+Variants_Overlap$Gene.Symbol <- as.character(Variants_Overlap$Gene.Symbol)
+
+Variants_Overlap$subclass[Variants_Overlap$subclass == ""] <- NA
+
+
+ggplot(Variants_Overlap, aes(x = Gene.Symbol, y = Sample)) +
+  geom_tile(aes(fill = subclass), color = "white", na.rm = FALSE) +
+  scale_fill_manual(
+    values = c25,
+    na.value = "darkgray"  # Color for real NA subclass values
+  ) +
+  labs(
+    title = "Genes with variants in both AZ and control samples",
+    x = "Gene",
+    y = "Sample",
+    fill = "Subclass"
+  ) +
+  theme_minimal() +
+  geom_hline(yintercept = 0.5:25, color = "grey90", linetype = "solid") + 
+  geom_hline(yintercept = c(3.5, 6.5, 9.5, 12.5, 15.5, 18.5, 21.5), color = "black", linetype = "solid") +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, size = 7),
+    axis.text.y = element_text(size = 10)
+  )
+
+
+# ggsave("variant_subclass_blastedOVERLAP_map.png", width = 10, height = 4, dpi = 300)
+
+```
+
+```{r}
+
+library(dplyr)
+library(ggplot2)
+
+# Desired samples in the order you want on the y-axis
+desired_samples <- c(
+  "AZ05_S07", "AZ05_S04", "AZ05_S01",
+  "AZ04_S07", "AZ04_S04", "AZ04_S01",
+  "AZ03_S07", "AZ03_S04", "AZ03_S01",
+  "AZ02_S07", "AZ02_S04", "AZ02_S01",
+  "AZ01_S07", "AZ01_S04", "AZ01_S01"
+)
+
+# Clean subclass column
+Variants_Azithro$subclass[Variants_Azithro$subclass == ""] <- NA
+Variants_Azithro$Gene.Symbol <- as.character(Variants_Azithro$Gene.Symbol)
+
+# Find missing samples
+existing_samples <- unique(Variants_Azithro$Sample)
+missing_samples <- setdiff(desired_samples, existing_samples)
+
+# Create dummy rows for missing samples so they show on the y-axis
+dummy_rows <- data.frame(
+  Sample = missing_samples,
+  Gene.Symbol = NA_character_,  # NA means no tile on x axis
+  subclass = NA_character_,
+  stringsAsFactors = FALSE
+)
+
+# Combine original and dummy rows
+Variants_Azithro_filled <- bind_rows(Variants_Azithro, dummy_rows)
+
+# Set factor levels for y-axis (Samples)
+Variants_Azithro_filled$Sample <- factor(Variants_Azithro_filled$Sample, levels = desired_samples)
+
+# Optional: set Gene.Symbol as factor if you want specific order on x-axis
+# Variants_Azithro_filled$Gene.Symbol <- factor(Variants_Azithro_filled$Gene.Symbol)
+
+# Define colors for subclasses - you can customize these hex codes
+subclass_colors <- c(
+  "Capsule and Slime layer" = "#1f77b4",
+  "Multidrug efflux systems" = "#ff7f0e",
+  "Branched-chain amino acids" = "#2ca02c",
+  "Fermentation" = "#d62728",
+  "Transcription" = "#9467bd",
+  "Ribosome biogenesis" = "#8c564b",
+  "RNA processing and modification" = "#e377c2",
+  "Protein folding" = "#7f7f7f",
+  "Aromatic amino acids and derivatives" = "#bcbd22"
+)
+
+ggplot(Variants_Azithro_filled, aes(x = Gene.Symbol, y = Sample)) +
+  geom_tile(aes(fill = subclass), color = "white", na.rm = FALSE) +
+  scale_fill_manual(
+    values = subclass_colors,
+    na.value = "gray80"  # color for missing subclass tiles
+  ) +
+  labs(
+    title = "Genes with variants: unique to Azithromycin samples",
+    x = "Gene",
+    y = "Sample",
+    fill = "Subclass"
+  ) +
+  theme_minimal() +
+  geom_hline(yintercept = 0.5:(length(desired_samples) + 5), color = "grey90", linetype = "solid") + 
+  # Adjust or remove the next line if it doesn't fit your data grid
+  geom_hline(yintercept = seq(3.5, length(desired_samples), by = 3), color = "black", linetype = "solid") +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, size = 7),
+    axis.text.y = element_text(size = 10)
+  )
+
+ggsave("variant_subclass_blastedAZ_map.png", width = 10, height = 4, dpi = 300)
+
+```
+
+
+```{r}
+# Overlap
+# "yecD" "aspS"  "yneO" "ycjM" "pspE" "pspD" "pinE" "stfP" "tfaP" "tfaE" "stfE" "ymfQ" "ybaP" "ybaK" "yaiO" "frmR" "frmA" "ykgE" "ykgD"
+# "thrA" "yjtD" "rsmC" "yjjZ" "yjhC" "yjhB" "rpoC" "rpoB" "aslB" "yifK" "rfaL" "rfaC" "ygaC" "ygaW" "yfdF" "fadL" "mepA" "yfcA"
+# 
+# Control only 
+# "yedJ" "dcm"  "amyA" "fliT" "fliS" "ydhC" "ydhB" "ydgI" "ydgH" "rne"  "glnS" "nagE" "borD" "rzpD" "arrD" "yagF" "carB"
+# 
+# Azithromycin only 
+# "wcaC" "wcaD" "ycgV" "csgC" "csgA" "ycbF" "fimF" "ybjK" "ybjJ" "kefA" "acrR" "sbmA" "ampH" "ilvI" "leuO" "fimC" "fimI" "rhsA" "pitA"
+# "yhiN" "ykgK" "yqeG" "rpoA" "rplQ" "rluD" "yfiH" "clpB" "aroC" "yfbV" "yfbU"
+
+
+genes_of_interestOVERLAP <- c(
+  "yecD", "aspS", "yneO", "ycjM", "pspE", "pspD", "pinE", "stfP", "tfaP", "tfaE",
+  "stfE", "ymfQ", "ybaP", "ybaK", "yaiO", "frmR", "frmA", "ykgE", "ykgD",
+  "thrA", "yjtD", "rsmC", "yjjZ", "yjhC", "yjhB", "rpoC", "rpoB", "aslB",
+  "yifK", "rfaL", "rfaC", "ygaC", "ygaW", "yfdF", "fadL", "mepA", "yfcA"
+)
+
+Overlap_products <- blastedvariants[blastedvariants$Gene.Symbol %in% genes_of_interestOVERLAP, c("Gene.Symbol", "Product")]
+
+# View results
+head(Overlap_products)
+
+
+genes_of_interestCN <- c(
+  "yedJ", "dcm",  "amyA", "fliT", "fliS", "ydhC", "ydhB", "ydgI", "ydgH", "rne",  "glnS", "nagE", "borD", "rzpD", "arrD", "yagF", "carB"
+)
+
+Control_products <- blastedvariants[blastedvariants$Gene.Symbol %in% genes_of_interestCN, c("Gene.Symbol", "Product")]
+
+# View results
+head(Control_products)
+
+
+genes_of_interestAZ <- c(
+  "wcaC", "wcaD", "ycgV", "csgC", "csgA", "ycbF", "fimF", "ybjK", "ybjJ", "kefA", "acrR", "sbmA", "ampH", "ilvI", "leuO", 
+  "fimC", "fimI", "rhsA", "pitA", "yhiN", "ykgK", "yqeG", "rpoA", "rplQ", "rluD", "yfiH", "clpB", "aroC", "yfbV", "yfbU"
+)
+
+
+AZ_products <- blastedvariants[blastedvariants$Gene.Symbol %in% genes_of_interestAZ, c("Gene.Symbol", "Product")]
+
+# View results
+head(AZ_products)
+
+
+library(dplyr)
+library(openxlsx)
+
+# Make distinct dataframes
+Overlap_products_distinct <- distinct(Overlap_products)
+Control_products_distinct <- distinct(Control_products)
+AZ_products_distinct <- distinct(AZ_products)
+
+# Create workbook
+wb <- createWorkbook()
+
+# Add sheets and write distinct data
+addWorksheet(wb, "Overlap_products")
+writeData(wb, "Overlap_products", Overlap_products_distinct)
+
+addWorksheet(wb, "Control_products")
+writeData(wb, "Control_products", Control_products_distinct)
+
+addWorksheet(wb, "AZ_products")
+writeData(wb, "AZ_products", AZ_products_distinct)
+
+# Save workbook
+saveWorkbook(wb, file = "products_combined_distinct.xlsx", overwrite = TRUE)
+
+
+```

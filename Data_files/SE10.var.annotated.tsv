@@ -1,0 +1,4 @@
+Sample	Contig	Pos	Ref	Var	Score	Var_cov	Var_frac	Type	Ref_nt	Var_nt	Ref_nt_pos_change	Ref_aa_pos_change	Frameshift	Gene_ID	Locus_tag	Gene_name	Function	Upstream_feature	Downstream_feature	snpEff_type	snpEff_impact
+SE10	562.163959.con.0001	966020	AGGGGGGGGG	AGGGGGGGG	22.3263	75	0.46	Deletion										Uncharacterized protein YfdF	Long-chain fatty acid transport protein	intergenic_region	MODIFIER
+SE10	562.163959.con.0001	2220068	G	C	209.496	36	0.21	Nonsyn	gtt	Ctt	37G>C	Val13Leu		fig|562.163959.peg.2191			Phage tail fiber, side tail fiber protein Stf	Phage DNA invertase	Tail fiber assembly protein	missense_variant	MODERATE
+SE10	562.163959.con.0001	3108303	TCCCCCCC	TCCCCC,TCCCC	29.0387	92	0.39	Insertion										Predicted L-lactate dehydrogenase, Fe-S oxidoreductase subunit YkgE	hypothetical protein	intergenic_region	MODIFIER

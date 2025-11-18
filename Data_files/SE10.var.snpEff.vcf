@@ -1,0 +1,37 @@
+##fileformat=VCFv4.2
+##FILTER=<ID=PASS,Description="All filters passed">
+##bcftoolsVersion=1.17+htslib-1.17
+##bcftoolsCommand=mpileup -Ou -f ref.fa aln.bam
+##reference=file://ref.fa
+##contig=<ID=562.163959.con.0001,length=4642499>
+##ALT=<ID=*,Description="Represents allele(s) other than observed.">
+##filter="QUAL > 10 & DP > 5"
+##INFO=<ID=INDEL,Number=0,Type=Flag,Description="Indicates that the variant is an INDEL.">
+##INFO=<ID=IDV,Number=1,Type=Integer,Description="Maximum number of raw reads supporting an indel">
+##INFO=<ID=IMF,Number=1,Type=Float,Description="Maximum fraction of raw reads supporting an indel">
+##INFO=<ID=DP,Number=1,Type=Integer,Description="Raw read depth">
+##INFO=<ID=VDB,Number=1,Type=Float,Description="Variant Distance Bias for filtering splice-site artefacts in RNA-seq data (bigger is better)",Version="3">
+##INFO=<ID=RPBZ,Number=1,Type=Float,Description="Mann-Whitney U-z test of Read Position Bias (closer to 0 is better)">
+##INFO=<ID=MQBZ,Number=1,Type=Float,Description="Mann-Whitney U-z test of Mapping Quality Bias (closer to 0 is better)">
+##INFO=<ID=BQBZ,Number=1,Type=Float,Description="Mann-Whitney U-z test of Base Quality Bias (closer to 0 is better)">
+##INFO=<ID=MQSBZ,Number=1,Type=Float,Description="Mann-Whitney U-z test of Mapping Quality vs Strand Bias (closer to 0 is better)">
+##INFO=<ID=SCBZ,Number=1,Type=Float,Description="Mann-Whitney U-z test of Soft-Clip Length Bias (closer to 0 is better)">
+##INFO=<ID=SGB,Number=1,Type=Float,Description="Segregation based metric, http://samtools.github.io/bcftools/rd-SegBias.pdf">
+##INFO=<ID=MQ0F,Number=1,Type=Float,Description="Fraction of MQ0 reads (smaller is better)">
+##FORMAT=<ID=PL,Number=G,Type=Integer,Description="List of Phred-scaled genotype likelihoods">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##INFO=<ID=AC,Number=A,Type=Integer,Description="Allele count in genotypes for each ALT allele, in the same order as listed">
+##INFO=<ID=AN,Number=1,Type=Integer,Description="Total number of alleles in called genotypes">
+##INFO=<ID=DP4,Number=4,Type=Integer,Description="Number of high-quality ref-forward , ref-reverse, alt-forward and alt-reverse bases">
+##INFO=<ID=MQ,Number=1,Type=Integer,Description="Average mapping quality">
+##bcftools_callVersion=1.17+htslib-1.17
+##bcftools_callCommand=call -Ov -mv mpileup; Date=Sun May 11 22:28:00 2025
+##SnpEffVersion="4.3t (build 2017-11-24 10:18), by Pablo Cingolani"
+##SnpEffCmd="SnpEff  -no-downstream -no-upstream -no-utr -o vcf 562.163959 var.vcf "
+##INFO=<ID=ANN,Number=.,Type=String,Description="Functional annotations: 'Allele | Annotation | Annotation_Impact | Gene_Name | Gene_ID | Feature_Type | Feature_ID | Transcript_BioType | Rank | HGVS.c | HGVS.p | cDNA.pos / cDNA.length | CDS.pos / CDS.length | AA.pos / AA.length | Distance | ERRORS / WARNINGS / INFO' ">
+##INFO=<ID=LOF,Number=.,Type=String,Description="Predicted loss of function effects for this variant. Format: 'Gene_Name | Gene_ID | Number_of_transcripts_in_gene | Percent_of_transcripts_affected'">
+##INFO=<ID=NMD,Number=.,Type=String,Description="Predicted nonsense mediated decay effects for this variant. Format: 'Gene_Name | Gene_ID | Number_of_transcripts_in_gene | Percent_of_transcripts_affected'">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	aln.bam
+562.163959.con.0001	966020	.	AGGGGGGGGG	AGGGGGGGG	22.3263	.	AC=1;AN=2;BQBZ=-1.73071;DP=180;DP4=48,40,23,52;IDV=92;IMF=0.511111;MQ=60;MQ0F=0;MQBZ=0;MQSBZ=0;RPBZ=-1.03181;SCBZ=1.31688;SGB=-0.693147;VDB=0.219017;INDEL;ANN=AGGGGGGGG|intergenic_region|MODIFIER|PATRIC:fig|562.163959.peg.938-PATRIC:fig|562.163959.peg.939|PATRIC:fig|562.163959.peg.938-PATRIC:fig|562.163959.peg.939|intergenic_region|PATRIC:fig|562.163959.peg.938-PATRIC:fig|562.163959.peg.939|||n.966029delG||||||	GT:PL	0/1:66,11,64
+562.163959.con.0001	2220068	.	G	C	209.496	.	AC=1;AN=2;BQBZ=1.21129;DP=175;DP4=59,80,18,18;MQ=59;MQ0F=0;MQBZ=-2.70916;MQSBZ=1.27725;RPBZ=-9.23245;SCBZ=2.08749;SGB=-0.693139;VDB=5.84568e-14;ANN=C|missense_variant|MODERATE|PATRIC:fig|562.163959.peg.2191|PATRIC:fig|562.163959.peg.2191|transcript|PATRIC:fig|562.163959.peg.2191|protein_coding|1/1|c.37G>C|p.Val13Leu|37/378|37/378|13/125||	GT:PL	0/1:244,0,255
+562.163959.con.0001	3108303	.	TCCCCCCC	TCCCCC,TCCCC	29.0387	.	AC=1,1;AN=2;BQBZ=-1.57111;DP=244;DP4=42,102,71,21;IDV=100;IMF=0.409836;MQ=60;MQ0F=0;MQBZ=0;MQSBZ=0;RPBZ=-0.670462;SCBZ=-1.435;SGB=-0.693147;VDB=0.636137;INDEL;ANN=TCCCC|intergenic_region|MODIFIER|PATRIC:fig|562.163959.peg.3050-PATRIC:fig|562.163959.peg.3051|PATRIC:fig|562.163959.peg.3050-PATRIC:fig|562.163959.peg.3051|intergenic_region|PATRIC:fig|562.163959.peg.3050-PATRIC:fig|562.163959.peg.3051|||n.3108308_3108310delCCC||||||,TCCCCC|intergenic_region|MODIFIER|PATRIC:fig|562.163959.peg.3050-PATRIC:fig|562.163959.peg.3051|PATRIC:fig|562.163959.peg.3050-PATRIC:fig|562.163959.peg.3051|intergenic_region|PATRIC:fig|562.163959.peg.3050-PATRIC:fig|562.163959.peg.3051|||n.3108309_3108310delCC||||||	GT:PL	1/2:92,185,51,255,0,95
